@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="robots" content="noindex">
+  <title>Account manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2" class="accent"/></svg>
+      <span>Account manager</span>
+    </div>
+    <div class="connection" id="connection" data-state="connecting"><span class="dot"></span><span id="connection-text">Connecting</span></div>
+  </header>
+
+  <main id="app" hidden>
+    <section class="stats" aria-label="System">
+      <div class="stat"><span class="label">Clients running</span><span class="value" id="stat-running">0</span></div>
+      <div class="stat"><span class="label">CPU</span><span class="value" id="stat-cpu">0%</span><div class="bar"><span id="bar-cpu"></span></div></div>
+      <div class="stat"><span class="label">Memory</span><span class="value" id="stat-mem">0 / 0 GB</span><div class="bar"><span id="bar-mem"></span></div></div>
+      <div class="stat"><span class="label">Clients memory</span><span class="value" id="stat-clients-mem">0 GB</span></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Accounts</h2>
+        <button class="btn danger" id="close-all">Close all clients</button>
+      </div>
+      <ul class="accounts" id="accounts"></ul>
+      <p class="empty" id="accounts-empty" hidden>No accounts yet.</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Scheduled shutdown</h2>
+        <span class="muted" id="schedule-status">Nothing scheduled</span>
+      </div>
+      <div class="schedule">
+        <button class="btn" data-minutes="30">30 min</button>
+        <button class="btn" data-minutes="60">1 hour</button>
+        <button class="btn" data-minutes="120">2 hours</button>
+        <form id="custom-form" class="custom">
+          <input id="custom-minutes" type="number" min="1" max="2880" inputmode="numeric" placeholder="Minutes" aria-label="Minutes">
+          <button class="btn" type="submit">Schedule</button>
+        </form>
+        <button class="btn ghost" id="cancel-schedule">Cancel</button>
+      </div>
+    </section>
+  </main>
+
+  <section id="login" class="login" hidden>
+    <form id="login-form" class="panel">
+      <h2>Enter access token</h2>
+      <p class="muted">Copy it from Remote control in the desktop app. It stays in this browser tab only.</p>
+      <input id="token" type="password" autocomplete="off" spellcheck="false" aria-label="Access token" placeholder="Access token">
+      <button class="btn primary" type="submit">Connect</button>
+      <p class="error" id="login-error" hidden></p>
+    </form>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

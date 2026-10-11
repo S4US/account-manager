@@ -1,0 +1,24 @@
+# Local research material — never published
+target/
+analysis/
+
+# Build output
+bin/
+obj/
+artifacts/
+publish/
+TestResults/
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+
+# Runtime data
+*.db
+*.db-wal
+*.db-shm
+*.log
