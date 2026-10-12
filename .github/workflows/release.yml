@@ -1,0 +1,47 @@
+# Pushing a tag like v0.2.0 builds, tests and publishes the app, then creates a GitHub release with:
+#   AccountManager.exe          the app (what the in-app updater downloads)
+#   AccountManager.exe.sha256   its checksum (the updater refuses a download that doesn't match)
+#   AccountManager-<version>-win-x64.zip   the same exe, zipped, for manual downloads
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Test
+        run: dotnet test -c Release
+
+      - name: Publish
+        shell: pwsh
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          dotnet publish src/AccountManager.App -c Release -r win-x64 -o publish -p:Version=$version
+          $hash = (Get-FileHash publish/AccountManager.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -Path publish/AccountManager.exe.sha256 -Value "$hash  AccountManager.exe" -Encoding ascii -NoNewline
+          Compress-Archive -Path publish/AccountManager.exe -DestinationPath "publish/AccountManager-$version-win-x64.zip"
+
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          gh release create '${{ github.ref_name }}' `
+            publish/AccountManager.exe `
+            publish/AccountManager.exe.sha256 `
+            "publish/AccountManager-$version-win-x64.zip" `
+            --title '${{ github.ref_name }}' `
+            --generate-notes

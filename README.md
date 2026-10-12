@@ -12,6 +12,10 @@ A Windows app for running several Roblox accounts at once without your PC grindi
 - **Keep them running.** Auto-restart after crashes or disconnects, with backoff, and anti-AFK so idle clients aren't kicked.
 - **Check in from elsewhere.** An optional web panel for your phone, protected by a token, plus Discord notifications when a client crashes.
 
+## Download
+
+Get `AccountManager.exe` from the [latest release](https://github.com/S4US/account-manager/releases/latest) and run it. The app checks for new versions and asks before installing one.
+
 ## Requirements
 
 - Windows 10 or 11
@@ -29,11 +33,13 @@ dotnet publish src/AccountManager.App -c Release -r win-x64 -o publish/win-x64
 
 The last command produces a single `AccountManager.exe`.
 
+To publish a release, push a version tag (for example `git tag v0.2.0` then `git push origin v0.2.0`). GitHub Actions builds and tests it and attaches the exe, its SHA-256 checksum and a zip to a new release. Installed copies pick it up through the updater.
+
 ## Your data
 
 - Everything is stored in `%APPDATA%\AccountManager`: accounts, settings and logs.
 - Saved sign-ins are encrypted so only your Windows account can read them. An optional master password adds a second lock.
-- The app only talks to roblox.com, plus a Discord webhook if you set one up. Nothing else is sent anywhere.
+- The app talks to roblox.com, a Discord webhook if you set one up, and GitHub to check for updates (you can turn that off in Settings). Nothing else is sent anywhere.
 - While managed clients run, the app writes Roblox's frame rate setting and fast-flag file. Your own values are put back afterwards.
 
 ## Note
