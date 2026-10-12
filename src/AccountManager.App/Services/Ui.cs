@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Windows;
+using AccountManager.App.ViewModels;
 using Wpf.Ui;
 using Wpf.Ui.Controls;
 
@@ -10,21 +11,16 @@ public static class Ui
 {
     public static ContentDialogService Dialogs { get; } = new();
 
-    public static SnackbarService Snackbar { get; } = new() { DefaultTimeOut = TimeSpan.FromSeconds(4) };
-
     public static void Notify(string title, string message = "", ControlAppearance appearance = ControlAppearance.Secondary)
     {
-        RunOnUi(() =>
+        StatusTone tone = appearance switch
         {
-            SymbolRegular icon = appearance switch
-            {
-                ControlAppearance.Success => SymbolRegular.CheckmarkCircle24,
-                ControlAppearance.Caution => SymbolRegular.Warning24,
-                ControlAppearance.Danger => SymbolRegular.ErrorCircle24,
-                _ => SymbolRegular.Info24,
-            };
-            Snackbar.Show(title, message, appearance, new SymbolIcon(icon), Snackbar.DefaultTimeOut);
-        });
+            ControlAppearance.Success => StatusTone.Success,
+            ControlAppearance.Caution => StatusTone.Caution,
+            ControlAppearance.Danger => StatusTone.Critical,
+            _ => StatusTone.Neutral,
+        };
+        RunOnUi(() => Toasts.Show(title, message, tone));
     }
 
     public static void Success(string title, string message = "") => Notify(title, message, ControlAppearance.Success);
@@ -68,13 +64,34 @@ public static class Ui
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = false });
     }
 
-    public static bool TrySetClipboard(string text)
+    private static readonly TimeSpan SensitiveClipboardLifetime = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Copies text. With <paramref name="sensitive"/>, Windows is told to keep it out of clipboard history and
+    /// cloud clipboard, and it is cleared after 30 seconds unless something else was copied since.
+    /// </summary>
+    public static bool TrySetClipboard(string text, bool sensitive = false)
     {
+        var data = new DataObject();
+        data.SetText(text, TextDataFormat.UnicodeText);
+        if (sensitive)
+        {
+            // Formats documented by Windows for password managers.
+            data.SetData("ExcludeClipboardContentFromMonitorProcessing", new MemoryStream([0]));
+            data.SetData("CanIncludeInClipboardHistory", new MemoryStream(BitConverter.GetBytes(0)));
+            data.SetData("CanUploadToCloudClipboard", new MemoryStream(BitConverter.GetBytes(0)));
+        }
+
         for (int attempt = 0; attempt < 5; attempt++)
         {
             try
             {
-                Clipboard.SetDataObject(text, copy: true);
+                Clipboard.SetDataObject(data, copy: true);
+                if (sensitive)
+                {
+                    ClearLater(text);
+                }
+
                 return true;
             }
             catch (System.Runtime.InteropServices.COMException)
@@ -84,5 +101,53 @@ public static class Ui
         }
 
         return false;
+    }
+
+    private static void ClearLater(string text)
+    {
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = SensitiveClipboardLifetime };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            try
+            {
+                if (Clipboard.ContainsText() && Clipboard.GetText() == text)
+                {
+                    Clipboard.Clear();
+                }
+            }
+            catch (System.Runtime.InteropServices.COMException)
+            {
+                // Another app holds the clipboard; leave it.
+            }
+        };
+        timer.Start();
+    }
+
+    /// <summary>Asks for a line of text. Returns the trimmed text, or null when cancelled or left empty.</summary>
+    public static async Task<string?> PromptAsync(string title, string placeholder, string primary, string initial = "")
+    {
+        var input = new Wpf.Ui.Controls.TextBox { PlaceholderText = placeholder, Text = initial, MinWidth = 320 };
+        var dialog = new ContentDialog
+        {
+            Title = title,
+            Content = input,
+            PrimaryButtonText = primary,
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        dialog.Loaded += (_, _) =>
+        {
+            input.Focus();
+            input.SelectAll();
+        };
+
+        if (await Dialogs.ShowAsync(dialog, CancellationToken.None) != ContentDialogResult.Primary)
+        {
+            return null;
+        }
+
+        string text = input.Text.Trim();
+        return text.Length == 0 ? null : text;
     }
 }

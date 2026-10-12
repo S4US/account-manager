@@ -13,6 +13,43 @@ public enum StatusTone
     Accent,
 }
 
+/// <summary>
+/// A section of the account list. One instance per group name lives for the whole session, so its expanded state
+/// survives the list being rebuilt.
+/// </summary>
+public sealed partial class AccountGroup : ObservableObject
+{
+    private readonly Action<AccountGroup>? _expandedChanged;
+
+    public AccountGroup(string name, bool isExpanded, Action<AccountGroup>? expandedChanged)
+    {
+        Name = name;
+        _isExpanded = isExpanded;
+        _expandedChanged = expandedChanged;
+    }
+
+    /// <summary>The stored group name; empty for accounts without a group.</summary>
+    public string Name { get; }
+
+    public string Title => Name.Length == 0 ? "No group" : Name;
+
+    /// <summary>Named groups alphabetically, then "No group" last.</summary>
+    public string SortKey => Name.Length == 0 ? "￿" : Name.ToLowerInvariant();
+
+    [ObservableProperty]
+    private bool _isExpanded;
+
+    partial void OnIsExpandedChanged(bool value) => _expandedChanged?.Invoke(this);
+}
+
+/// <summary>Where a dragged account would land relative to this row.</summary>
+public enum DropPosition
+{
+    None,
+    Before,
+    After,
+}
+
 /// <summary>One row in the accounts list: the stored account plus its live client state.</summary>
 public sealed partial class AccountItemViewModel : ObservableObject
 {
@@ -85,13 +122,30 @@ public sealed partial class AccountItemViewModel : ObservableObject
 
     public bool AntiAfk => Account.AntiAfk;
 
+    public bool IsOptimized => Account.Optimize;
+
+    public bool HasPassword => !string.IsNullOrEmpty(Account.EncryptedPassword);
+
+    public int SortOrder => Account.SortOrder;
+
+    /// <summary>The section this row is shown in; assigned by the list when it (re)loads.</summary>
+    [ObservableProperty]
+    private AccountGroup? _group;
+
+    public string GroupSortKey => Group?.SortKey ?? "￿";
+
+    [ObservableProperty]
+    private DropPosition _dropPosition;
+
+    partial void OnGroupChanged(AccountGroup? value) => OnPropertyChanged(nameof(GroupSortKey));
+
     public bool IsFavorite => Account.IsFavorite;
 
     public string Tags => Account.Tags;
 
     public bool CanLaunch => !IsActive && !IsBusy;
 
-    public string SearchText => $"{Account.Username} {Account.Alias} {Account.DisplayName} {Account.Tags} {Account.Notes}";
+    public string SearchText => $"{Account.Username} {Account.Alias} {Account.DisplayName} {Account.Tags} {Account.Notes} {Account.Group}";
 
     public void UpdateAccount(Account account, int index)
     {

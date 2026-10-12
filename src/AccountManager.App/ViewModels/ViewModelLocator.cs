@@ -11,6 +11,7 @@ public static class ViewModelLocator
     private static readonly Lazy<RemoteViewModel> RemoteLazy = new(() => new RemoteViewModel(AppHost.Current));
     private static readonly Lazy<ActivityViewModel> ActivityLazy = new(() => new ActivityViewModel(AppHost.Current));
     private static readonly Lazy<SettingsViewModel> SettingsLazy = new(() => new SettingsViewModel(AppHost.Current));
+    private static readonly Lazy<UpdatesViewModel> UpdatesLazy = new(() => new UpdatesViewModel(AppHost.Current));
 
     public static AccountsViewModel Accounts => AccountsLazy.Value;
 
@@ -23,4 +24,6 @@ public static class ViewModelLocator
     public static ActivityViewModel Activity => ActivityLazy.Value;
 
     public static SettingsViewModel Settings => SettingsLazy.Value;
+
+    public static UpdatesViewModel Updates => UpdatesLazy.Value;
 }

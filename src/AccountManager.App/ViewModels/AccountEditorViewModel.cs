@@ -14,9 +14,15 @@ public sealed partial class AccountEditorViewModel : ObservableObject
 {
     private readonly Account _account;
 
-    public AccountEditorViewModel(Account account)
+    private readonly string _originalPassword;
+
+    public AccountEditorViewModel(Account account, IReadOnlyList<string>? groups = null, string password = "")
     {
         _account = account;
+        GroupNames = groups ?? [];
+        Group = account.Group;
+        _originalPassword = password;
+        Password = password;
         Alias = account.Alias;
         Tags = account.Tags;
         Notes = account.Notes;
@@ -25,6 +31,7 @@ public sealed partial class AccountEditorViewModel : ObservableObject
         FollowUsername = account.DefaultTarget.Kind == JoinKind.FollowUser ? account.DefaultTarget.FollowUsername : "";
         FpsCap = FpsCaps.FirstOrDefault(c => c.Value == account.FpsCap) ?? new Choice<int>($"{account.FpsCap} FPS", account.FpsCap);
         UsePerformancePreset = account.UsePerformancePreset;
+        Optimize = account.Optimize;
         AutoRestart = account.AutoRestart;
         AntiAfk = account.AntiAfk;
         RamLimit = RamLimits.FirstOrDefault(c => c.Value == account.RamLimitMb) ?? RamLimits[0];
@@ -45,6 +52,18 @@ public sealed partial class AccountEditorViewModel : ObservableObject
     ];
 
     public string Username => _account.Username;
+
+    /// <summary>Existing groups offered in the group box; any new name can be typed too.</summary>
+    public IReadOnlyList<string> GroupNames { get; }
+
+    [ObservableProperty]
+    private string _group = "";
+
+    /// <summary>Optional account password. Saved encrypted; only used for copying.</summary>
+    [ObservableProperty]
+    private string _password = "";
+
+    public bool PasswordChanged => Password != _originalPassword;
 
     [ObservableProperty]
     private string _alias = "";
@@ -69,6 +88,9 @@ public sealed partial class AccountEditorViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _usePerformancePreset;
+
+    [ObservableProperty]
+    private bool _optimize;
 
     [ObservableProperty]
     private bool _autoRestart;
@@ -125,6 +147,7 @@ public sealed partial class AccountEditorViewModel : ObservableObject
         }
 
         _account.Alias = Alias.Trim();
+        _account.Group = Group.Trim();
         _account.Tags = string.Join(", ", Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         _account.Notes = Notes.Trim();
         _account.IsFavorite = IsFavorite;
@@ -135,6 +158,7 @@ public sealed partial class AccountEditorViewModel : ObservableObject
 
         _account.FpsCap = FpsCap.Value;
         _account.UsePerformancePreset = UsePerformancePreset;
+        _account.Optimize = Optimize;
         _account.AutoRestart = AutoRestart;
         _account.AntiAfk = AntiAfk;
         _account.RamLimitMb = RamLimit.Value;

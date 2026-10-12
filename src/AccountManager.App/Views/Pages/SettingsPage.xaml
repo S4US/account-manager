@@ -176,6 +176,52 @@
                 <ui:ToggleSwitch IsChecked="{Binding ConfirmKillAll}" />
             </ui:CardControl>
 
+            <!--  Updates  -->
+            <TextBlock Style="{StaticResource SectionTitle}" Text="Updates" />
+            <ui:Card Padding="{StaticResource CardPadding}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="{Binding Updates.CurrentVersionText}" />
+                        <TextBlock
+                            Style="{StaticResource SettingDescription}"
+                            Text="{Binding Updates.Status}"
+                            Visibility="{Binding Updates.Status, Converter={StaticResource NotEmptyToVisibility}}" />
+                    </StackPanel>
+                    <StackPanel
+                        Grid.Column="1"
+                        Margin="12,0,0,0"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal">
+                        <ui:Button
+                            Margin="0,0,8,0"
+                            Command="{Binding Updates.OpenReleasePageCommand}"
+                            Content="What's new" />
+                        <ui:Button
+                            Command="{Binding Updates.CheckNowCommand}"
+                            Content="Check now"
+                            Visibility="{Binding Updates.IsReady, Converter={StaticResource InverseBoolToVisibility}}" />
+                        <ui:Button
+                            Appearance="Primary"
+                            Command="{Binding Updates.InstallAndRestartCommand}"
+                            Content="Install and restart"
+                            Visibility="{Binding Updates.IsReady, Converter={StaticResource BoolToVisibility}}" />
+                    </StackPanel>
+                </Grid>
+            </ui:Card>
+            <ui:CardControl Margin="0,4,0,0" Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Check for updates automatically" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Looks for a new version on GitHub when the app starts and every 12 hours. Updates are verified before installing, and the app always asks before restarting." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding Updates.CheckAutomatically}" />
+            </ui:CardControl>
+
             <!--  About  -->
             <TextBlock Style="{StaticResource SectionTitle}" Text="About" />
             <ui:Card Padding="{StaticResource CardPadding}">
@@ -196,7 +242,7 @@
                         <TextBlock
                             Margin="0,2,0,0"
                             Style="{StaticResource CaptionText}"
-                            Text="Nothing is sent anywhere except roblox.com and, if you set one up, your Discord webhook. Not affiliated with Roblox. Running several clients at once may go against Roblox's Terms of Use." />
+                            Text="Talks only to roblox.com, your Discord webhook if you set one up, and GitHub to check for updates. Not affiliated with Roblox. Running several clients at once may go against Roblox's Terms of Use." />
                         <TextBlock
                             Margin="0,8,0,0"
                             FontFamily="{StaticResource MonoFont}"

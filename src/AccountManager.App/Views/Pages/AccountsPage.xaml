@@ -96,7 +96,7 @@
                         <ui:TextBox
                             Grid.Column="2"
                             ClearButtonEnabled="True"
-                            PlaceholderText="Place ID, game link or private server link (optional)"
+                            PlaceholderText="Place ID or game link (optional)"
                             Text="{Binding JoinInput, UpdateSourceTrigger=PropertyChanged}"
                             Visibility="{Binding FollowMode, Converter={StaticResource InverseBoolToVisibility}}">
                             <ui:TextBox.Icon>
@@ -198,13 +198,92 @@
             Background="Transparent"
             BorderThickness="0"
             ItemContainerStyle="{StaticResource AccountRow}"
+            AllowDrop="True"
+            DragLeave="OnListDragLeave"
+            DragOver="OnListDragOver"
+            Drop="OnListDrop"
             ItemsSource="{Binding View}"
             MouseDoubleClick="OnRowDoubleClick"
+            PreviewMouseLeftButtonDown="OnListPreviewMouseDown"
+            PreviewMouseMove="OnListPreviewMouseMove"
             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
             SelectionChanged="OnSelectionChanged"
             SelectionMode="Extended"
             VirtualizingPanel.IsVirtualizing="True"
+            VirtualizingPanel.IsVirtualizingWhenGrouping="True"
             VirtualizingPanel.VirtualizationMode="Recycling">
+            <!--  Group sections: header with name, count, launch button; click the arrow to collapse  -->
+            <ListView.GroupStyle>
+                <GroupStyle>
+                    <GroupStyle.ContainerStyle>
+                        <Style TargetType="GroupItem">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="GroupItem">
+                                        <StackPanel>
+                                            <Grid Margin="0,14,0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <ToggleButton
+                                                    x:Name="Expander"
+                                                    Width="28"
+                                                    Height="28"
+                                                    Padding="0"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    IsChecked="{Binding Name.IsExpanded, Mode=TwoWay}"
+                                                    ToolTip="Show or hide this group">
+                                                    <ui:SymbolIcon x:Name="Chevron" FontSize="14" Symbol="ChevronDown24" />
+                                                </ToggleButton>
+                                                <TextBlock
+                                                    Grid.Column="1"
+                                                    Margin="6,0,8,0"
+                                                    VerticalAlignment="Center"
+                                                    FontSize="14"
+                                                    FontWeight="SemiBold"
+                                                    Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                                    Text="{Binding Name.Title}" />
+                                                <Border
+                                                    Grid.Column="2"
+                                                    Padding="7,1"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Center"
+                                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                                    CornerRadius="8">
+                                                    <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{Binding ItemCount}" />
+                                                </Border>
+                                                <ui:Button
+                                                    Grid.Column="3"
+                                                    Margin="0,0,13,0"
+                                                    Appearance="Transparent"
+                                                    Command="{Binding DataContext.LaunchGroupCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                                    CommandParameter="{Binding Items}"
+                                                    Content="Launch group"
+                                                    FontSize="12">
+                                                    <ui:Button.Icon>
+                                                        <ui:SymbolIcon Symbol="Play24" />
+                                                    </ui:Button.Icon>
+                                                </ui:Button>
+                                            </Grid>
+                                            <ItemsPresenter x:Name="Rows" />
+                                        </StackPanel>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger SourceName="Expander" Property="IsChecked" Value="False">
+                                                <Setter TargetName="Rows" Property="Visibility" Value="Collapsed" />
+                                                <Setter TargetName="Chevron" Property="Symbol" Value="ChevronRight24" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </GroupStyle.ContainerStyle>
+                </GroupStyle>
+            </ListView.GroupStyle>
             <ListView.ItemTemplate>
                 <DataTemplate DataType="{x:Type vm:AccountItemViewModel}">
                     <Grid Background="Transparent" MouseRightButtonUp="OnRowRightClick">
@@ -218,6 +297,43 @@
                             <ColumnDefinition Width="76" />
                             <ColumnDefinition Width="80" />
                         </Grid.ColumnDefinitions>
+                        <!--  Where a dragged account will land  -->
+                        <Border
+                            Grid.ColumnSpan="8"
+                            Height="2"
+                            Margin="-8,-9,-8,0"
+                            VerticalAlignment="Top"
+                            Background="{DynamicResource SystemAccentColorPrimaryBrush}"
+                            IsHitTestVisible="False">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding DropPosition}" Value="Before">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                        </Border>
+                        <Border
+                            Grid.ColumnSpan="8"
+                            Height="2"
+                            Margin="-8,0,-8,-9"
+                            VerticalAlignment="Bottom"
+                            Background="{DynamicResource SystemAccentColorPrimaryBrush}"
+                            IsHitTestVisible="False">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding DropPosition}" Value="After">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                        </Border>
 
                         <!--  Avatar  -->
                         <Grid Width="36" Height="36" HorizontalAlignment="Left">
@@ -294,12 +410,21 @@
                                     <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Auto-restart" />
                                 </Border>
                                 <Border
+                                    Margin="0,0,4,0"
                                     Padding="6,1"
                                     Background="{DynamicResource SubtleFillColorSecondaryBrush}"
                                     CornerRadius="4"
                                     ToolTip="Kept active so it isn't kicked for being idle"
                                     Visibility="{Binding AntiAfk, Converter={StaticResource BoolToVisibility}}">
                                     <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Anti-AFK" />
+                                </Border>
+                                <Border
+                                    Padding="6,1"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                    CornerRadius="4"
+                                    ToolTip="Runs like a normal Roblox client: no FPS cap, limits or other performance optimizations"
+                                    Visibility="{Binding IsOptimized, Converter={StaticResource InverseBoolToVisibility}}">
+                                    <TextBlock FontSize="11" Foreground="{DynamicResource SystemFillColorCautionBrush}" Text="Not optimized" />
                                 </Border>
                             </StackPanel>
                         </StackPanel>

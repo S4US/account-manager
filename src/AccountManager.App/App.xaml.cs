@@ -3,10 +3,12 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Threading;
 using AccountManager.App.Services;
+using AccountManager.App.ViewModels;
 using AccountManager.App.Views;
 using AccountManager.Core.Security;
 using AccountManager.Core.Services;
 using AccountManager.Core.Storage;
+using AccountManager.Core.Updates;
 using Wpf.Ui.Controls;
 
 namespace AccountManager.App;
@@ -31,7 +33,8 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 
         // 1. One running copy. A second launch asks the first to come forward and exits.
-        if (!AcquireSingleInstance(e.Args.Contains(ElevatedRestartArg)))
+        // A copy started by an update or an elevated restart waits for the copy that started it to exit.
+        if (!AcquireSingleInstance(e.Args.Contains(ElevatedRestartArg) || e.Args.Contains(UpdatesViewModel.UpdatedArg)))
         {
             Shutdown();
             return;
@@ -77,6 +80,20 @@ public partial class App : Application
         MainWindow = window;
         window.Closed += (_, _) => Shutdown();
         window.Show();
+
+        if (UpdatesViewModel.CanSelfUpdate)
+        {
+            // Removes the previous exe an update left behind, and says so after an update.
+            string exe = Environment.ProcessPath!;
+            _ = Task.Run(() => UpdateInstaller.CleanUpPrevious(exe));
+            if (e.Args.Contains(UpdatesViewModel.UpdatedArg))
+            {
+                _host.Log.Success($"Updated to version {ViewModelLocator.Updates.CurrentVersion.ToString(3)}.");
+                Ui.Success("Updated", $"You're now on version {ViewModelLocator.Updates.CurrentVersion.ToString(3)}.");
+            }
+        }
+
+        ViewModelLocator.Updates.Start();
 
         try
         {

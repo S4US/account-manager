@@ -38,6 +38,30 @@
                     <ui:TextBox PlaceholderText="farm, main, trading" Text="{Binding Tags, UpdateSourceTrigger=PropertyChanged}" />
                 </StackPanel>
             </Grid>
+            <Grid Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource FieldLabel}" Text="Group" />
+                    <ComboBox
+                        HorizontalAlignment="Stretch"
+                        IsEditable="True"
+                        IsTextSearchEnabled="False"
+                        ItemsSource="{Binding GroupNames}"
+                        Text="{Binding Group, UpdateSourceTrigger=PropertyChanged}"
+                        ToolTip="Pick a group or type a new name. Leave empty for no group." />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Style="{StaticResource FieldLabel}" Text="Password (optional)" />
+                    <ui:PasswordBox
+                        Password="{Binding Password, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="Only used for copying"
+                        ToolTip="Saved encrypted on this PC. Lets you copy the password or username:password from the account's menu." />
+                </StackPanel>
+            </Grid>
             <TextBlock Margin="0,12,0,6" Style="{StaticResource FieldLabel}" Text="Notes" />
             <ui:TextBox
                 MinHeight="64"
@@ -45,7 +69,7 @@
                 PlaceholderText="Anything you want to remember about this account"
                 Text="{Binding Notes, UpdateSourceTrigger=PropertyChanged}"
                 TextWrapping="Wrap" />
-            <CheckBox Margin="0,10,0,0" Content="Favorite (shown at the top of the list)" IsChecked="{Binding IsFavorite}" />
+            <CheckBox Margin="0,10,0,0" Content="Favorite (shown at the top of its group)" IsChecked="{Binding IsFavorite}" />
 
             <TextBlock Style="{StaticResource Group}" Text="When launched" />
             <TextBlock Style="{StaticResource FieldLabel}" Text="Join" />
@@ -55,7 +79,12 @@
             <ui:TextBox PlaceholderText="Roblox username (overrides the join link)" Text="{Binding FollowUsername, UpdateSourceTrigger=PropertyChanged}" />
 
             <TextBlock Style="{StaticResource Group}" Text="Performance" />
-            <Grid>
+            <ui:ToggleSwitch Content="Optimize this client" IsChecked="{Binding Optimize}" />
+            <TextBlock
+                Margin="0,4,0,12"
+                Style="{StaticResource CaptionText}"
+                Text="Off runs it like a normal Roblox client: no FPS cap, low-graphics preset, CPU or memory limit, priority changes or memory trimming. Changes to a running client apply right away, except the FPS cap and preset, which take effect at the next launch." />
+            <Grid IsEnabled="{Binding Optimize}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="12" />
@@ -76,7 +105,7 @@
                         SelectedItem="{Binding RamLimit}" />
                 </StackPanel>
             </Grid>
-            <ui:ToggleSwitch Margin="0,14,0,0" Content="Use the low-graphics preset" IsChecked="{Binding UsePerformancePreset}" />
+            <ui:ToggleSwitch Margin="0,14,0,0" Content="Use the low-graphics preset" IsChecked="{Binding UsePerformancePreset}" IsEnabled="{Binding Optimize}" />
 
             <TextBlock Style="{StaticResource Group}" Text="Reliability" />
             <ui:ToggleSwitch Content="Restart automatically after a crash or disconnect" IsChecked="{Binding AutoRestart}" />

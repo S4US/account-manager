@@ -24,6 +24,11 @@ public sealed partial class AccountsViewModel : ObservableObject
         View = CollectionViewSource.GetDefaultView(Items);
         View.Filter = Filter;
 
+        // Shown order: group, then favorites, then the user's own order.
+        View.SortDescriptions.Add(new SortDescription(nameof(AccountItemViewModel.GroupSortKey), ListSortDirection.Ascending));
+        View.SortDescriptions.Add(new SortDescription(nameof(AccountItemViewModel.IsFavorite), ListSortDirection.Descending));
+        View.SortDescriptions.Add(new SortDescription(nameof(AccountItemViewModel.SortOrder), ListSortDirection.Ascending));
+
         _host.Accounts.Changed += (_, _) => Ui.RunOnUi(Reload);
         _host.Instances.InstanceChanged += id => Ui.RunOnUi(() => UpdateInstance(id));
         _host.Settings.Changed += (_, _) => Ui.RunOnUi(() =>
@@ -32,6 +37,15 @@ public sealed partial class AccountsViewModel : ObservableObject
             OnPropertyChanged(nameof(FollowSuggestions));
         });
         Items.CollectionChanged += (_, _) => OnPropertyChanged(nameof(FollowSuggestions));
+
+        // Restore the launch bar as it was last used, then save it a moment after each change.
+        AppSettings saved = _host.Settings.Current;
+        _restoringLaunchBar = true;
+        JoinInput = saved.LastJoinInput;
+        FollowInput = saved.LastFollowInput;
+        FollowMode = saved.LastFollowMode;
+        _restoringLaunchBar = false;
+        _saveLaunchBar = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => SaveLaunchBar(), Dispatcher.CurrentDispatcher);
 
         // Uptime ticks even when nothing else changes.
         _refresh = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => RefreshAll(), Dispatcher.CurrentDispatcher);
@@ -92,7 +106,41 @@ public sealed partial class AccountsViewModel : ObservableObject
 
     partial void OnSearchChanged(string value) => View.Refresh();
 
-    partial void OnJoinInputChanged(string value) => UpdateJoinHint();
+    private readonly DispatcherTimer _saveLaunchBar;
+    private bool _restoringLaunchBar;
+
+    partial void OnJoinInputChanged(string value)
+    {
+        UpdateJoinHint();
+        ScheduleLaunchBarSave();
+    }
+
+    private void ScheduleLaunchBarSave()
+    {
+        if (_restoringLaunchBar || _saveLaunchBar is null)
+        {
+            return;
+        }
+
+        _saveLaunchBar.Stop();
+        _saveLaunchBar.Start();
+    }
+
+    private void SaveLaunchBar()
+    {
+        _saveLaunchBar.Stop();
+        string join = JoinInput.Trim(), follow = FollowInput.Trim();
+        AppSettings s = _host.Settings.Current;
+        if (s.LastJoinInput != join || s.LastFollowInput != follow || s.LastFollowMode != FollowMode)
+        {
+            _host.Settings.Update(x =>
+            {
+                x.LastJoinInput = join;
+                x.LastFollowInput = follow;
+                x.LastFollowMode = FollowMode;
+            });
+        }
+    }
 
     partial void OnJobIdInputChanged(string value) => UpdateJoinHint();
 
@@ -101,9 +149,14 @@ public sealed partial class AccountsViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedJoinMode));
         OnPropertyChanged(nameof(FollowSuggestions));
         UpdateJoinHint();
+        ScheduleLaunchBarSave();
     }
 
-    partial void OnFollowInputChanged(string value) => UpdateJoinHint();
+    partial void OnFollowInputChanged(string value)
+    {
+        UpdateJoinHint();
+        ScheduleLaunchBarSave();
+    }
 
     private void UpdateJoinHint()
     {
@@ -312,7 +365,18 @@ public sealed partial class AccountsViewModel : ObservableObject
             return;
         }
 
-        var editor = new AccountEditorViewModel(item.Account);
+        string password;
+        try
+        {
+            password = _host.Accounts.GetPassword(item.Account);
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // Saved before a vault reset; the field starts empty and a new password replaces it.
+            password = "";
+        }
+
+        var editor = new AccountEditorViewModel(item.Account, GroupNames, password);
         var dialog = new ContentDialog
         {
             Title = $"Edit {item.Account.Username}",
@@ -351,6 +415,11 @@ public sealed partial class AccountsViewModel : ObservableObject
             {
                 Ui.Error("Couldn't look up that user", ex.Message);
             }
+        }
+
+        if (editor.PasswordChanged)
+        {
+            _host.Accounts.SetPassword(item.Account, editor.Password);
         }
 
         _host.Accounts.Save(item.Account);
@@ -463,6 +532,172 @@ public sealed partial class AccountsViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void CopyPassword(AccountItemViewModel? item)
+    {
+        if (item is not null && TryGetPassword(item, out string password) && Ui.TrySetClipboard(password, sensitive: true))
+        {
+            Ui.Notify("Password copied", "It's cleared from the clipboard in 30 seconds.");
+        }
+    }
+
+    [RelayCommand]
+    private void CopyLogin(AccountItemViewModel? item)
+    {
+        if (item is not null && TryGetPassword(item, out string password)
+            && Ui.TrySetClipboard($"{item.Account.Username}:{password}", sensitive: true))
+        {
+            Ui.Notify("Username:password copied", "It's cleared from the clipboard in 30 seconds.");
+        }
+    }
+
+    private bool TryGetPassword(AccountItemViewModel item, out string password)
+    {
+        password = "";
+        try
+        {
+            password = _host.Accounts.GetPassword(item.Account);
+        }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            Ui.Error("The saved password can't be read", "It was saved before the vault was reset. Enter it again in Edit.");
+            return false;
+        }
+
+        if (password.Length == 0)
+        {
+            Ui.Notify("No password saved", "Add one in Edit.");
+            return false;
+        }
+
+        return true;
+    }
+
+    // ---- Groups and order -------------------------------------------------------------------------------------
+
+    private readonly Dictionary<string, AccountGroup> _groups = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Group names in use, for menus and the editor.</summary>
+    public IReadOnlyList<string> GroupNames => _host.Accounts.Groups;
+
+    private AccountGroup GetGroup(string name)
+    {
+        name = name.Trim();
+        if (!_groups.TryGetValue(name, out AccountGroup? group))
+        {
+            bool collapsed = _host.Settings.Current.CollapsedGroups.Contains(name, StringComparer.OrdinalIgnoreCase);
+            group = new AccountGroup(name, !collapsed, SaveCollapsedGroups);
+            _groups[name] = group;
+        }
+
+        return group;
+    }
+
+    private void SaveCollapsedGroups(AccountGroup changed)
+    {
+        List<string> collapsed = _groups.Values.Where(g => !g.IsExpanded).Select(g => g.Name).ToList();
+        _host.Settings.Update(s => s.CollapsedGroups = collapsed);
+    }
+
+    /// <summary>The accounts the action applies to: the whole selection when the clicked row is part of it.</summary>
+    private List<AccountItemViewModel> TargetsOf(AccountItemViewModel item) =>
+        Selected.Contains(item) && Selected.Count > 1 ? Selected.ToList() : [item];
+
+    public void MoveToGroup(AccountItemViewModel item, string group)
+    {
+        List<AccountItemViewModel> targets = TargetsOf(item);
+        _host.Accounts.MoveToGroup(targets.Select(t => t.Account), group);
+        string where = group.Trim().Length == 0 ? "out of their group" : $"to {group.Trim()}";
+        Ui.Notify(targets.Count == 1 ? $"Moved {where}" : $"Moved {targets.Count} accounts {where}");
+    }
+
+    public async Task MoveToNewGroupAsync(AccountItemViewModel item)
+    {
+        string? name = await Ui.PromptAsync("New group", "Group name, for example Farm or Main", "Create");
+        if (name is not null)
+        {
+            MoveToGroup(item, name);
+        }
+    }
+
+    /// <summary>All accounts in the order they are shown (ignoring the search box).</summary>
+    private List<AccountItemViewModel> ShownOrder() => Items
+        .OrderBy(i => i.GroupSortKey, StringComparer.Ordinal)
+        .ThenByDescending(i => i.IsFavorite)
+        .ThenBy(i => i.SortOrder)
+        .ThenBy(i => i.Id)
+        .ToList();
+
+    /// <summary>Moves a row one place up or down within its group.</summary>
+    public void Nudge(AccountItemViewModel item, int direction)
+    {
+        List<AccountItemViewModel> order = ShownOrder();
+        int index = order.IndexOf(item);
+        int other = index + direction;
+        if (index < 0 || other < 0 || other >= order.Count || order[other].GroupSortKey != item.GroupSortKey)
+        {
+            return;
+        }
+
+        (order[index], order[other]) = (order[other], order[index]);
+        _host.Accounts.Reorder(order.Select(i => i.Account).ToList(), null, null);
+    }
+
+    public bool CanNudge(AccountItemViewModel item, int direction)
+    {
+        List<AccountItemViewModel> order = ShownOrder();
+        int other = order.IndexOf(item) + direction;
+        return other >= 0 && other < order.Count && order[other].GroupSortKey == item.GroupSortKey;
+    }
+
+    /// <summary>Drag and drop: puts <paramref name="dragged"/> before or after <paramref name="target"/>, in the target's group.</summary>
+    public void MoveAccount(AccountItemViewModel dragged, AccountItemViewModel target, bool after)
+    {
+        if (dragged == target)
+        {
+            return;
+        }
+
+        List<AccountItemViewModel> order = ShownOrder();
+        order.Remove(dragged);
+        int index = order.IndexOf(target) + (after ? 1 : 0);
+        order.Insert(Math.Clamp(index, 0, order.Count), dragged);
+
+        string group = target.Account.Group.Trim();
+        bool changesGroup = !string.Equals(dragged.Account.Group.Trim(), group, StringComparison.OrdinalIgnoreCase);
+        _host.Accounts.Reorder(order.Select(i => i.Account).ToList(), changesGroup ? dragged.Account : null, changesGroup ? group : null);
+        if (changesGroup)
+        {
+            Ui.Notify(group.Length == 0 ? $"Moved {dragged.Title} out of its group" : $"Moved {dragged.Title} to {group}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task LaunchGroupAsync(object? groupItems)
+    {
+        List<AccountItemViewModel> members = (groupItems as System.Collections.IEnumerable)?.OfType<AccountItemViewModel>().ToList() ?? [];
+        if (members.Count == 0)
+        {
+            return;
+        }
+
+        (bool ok, JoinTarget? target) = await GetJoinOverrideAsync();
+        if (!ok)
+        {
+            return;
+        }
+
+        int queued = _host.Instances.EnqueueMany(members.Where(m => !IsFollowingItself(m, target)).Select(m => m.Account), target);
+        if (queued > 0)
+        {
+            Ui.Notify($"Launching {queued} account{(queued == 1 ? "" : "s")}", queued > 1 ? $"One every {_host.Settings.Current.LaunchStaggerSeconds} seconds." : "");
+        }
+        else
+        {
+            Ui.Notify("Everyone in this group is already running");
+        }
+    }
+
+    [RelayCommand]
     private async Task DeleteAsync(AccountItemViewModel? item)
     {
         List<AccountItemViewModel> targets = item is not null && !Selected.Contains(item) ? [item] : Selected.ToList();
@@ -483,18 +718,6 @@ public sealed partial class AccountsViewModel : ObservableObject
             _host.Accounts.Delete(target.Account);
             _host.Log.Info("Account removed.", target.Account.Username);
         }
-    }
-
-    public void MoveItem(AccountItemViewModel item, int newIndex)
-    {
-        int oldIndex = Items.IndexOf(item);
-        if (oldIndex < 0 || newIndex < 0 || newIndex >= Items.Count || oldIndex == newIndex)
-        {
-            return;
-        }
-
-        Items.Move(oldIndex, newIndex);
-        _host.Accounts.Reorder(Items.Select(i => i.Account).ToList());
     }
 
     /// <summary>
@@ -582,9 +805,22 @@ public sealed partial class AccountsViewModel : ObservableObject
         {
             AccountItemViewModel item = existing.TryGetValue(accounts[i].Id, out AccountItemViewModel? found) ? found : new AccountItemViewModel(accounts[i], i);
             item.UpdateAccount(accounts[i], i);
+            item.Group = GetGroup(accounts[i].Group);
+            item.DropPosition = DropPosition.None;
             item.StreamerMode = _host.Settings.Current.StreamerMode;
             item.Apply(_host.Instances.Get(accounts[i].Id));
             next.Add(item);
+        }
+
+        // Sections only appear once some account is in a group.
+        bool grouped = next.Any(i => i.Account.Group.Trim().Length > 0);
+        if (grouped && View.GroupDescriptions.Count == 0)
+        {
+            View.GroupDescriptions.Add(new PropertyGroupDescription(nameof(AccountItemViewModel.Group)));
+        }
+        else if (!grouped && View.GroupDescriptions.Count > 0)
+        {
+            View.GroupDescriptions.Clear();
         }
 
         Items.Clear();
@@ -592,6 +828,8 @@ public sealed partial class AccountsViewModel : ObservableObject
         {
             Items.Add(item);
         }
+
+        OnPropertyChanged(nameof(GroupNames));
 
         foreach (AccountItemViewModel stale in Selected.Where(s => !next.Contains(s)).ToList())
         {

@@ -27,6 +27,8 @@ public sealed partial class SettingsViewModel : ObservableObject
 
     public string DataFolder => _host.Paths.Root;
 
+    public UpdatesViewModel Updates => ViewModelLocator.Updates;
+
     [ObservableProperty] private bool _streamerMode;
     [ObservableProperty] private bool _confirmKillAll;
     [ObservableProperty] private string _webhookUrl = "";

@@ -14,7 +14,6 @@ public partial class MainWindow : FluentWindow
         InitializeComponent();
         RootNavigation.SetServiceProvider(new PageProvider());
         Ui.Dialogs.SetDialogHost(RootContentDialog);
-        Ui.Snackbar.SetSnackbarPresenter(SnackbarPresenter);
         Loaded += (_, _) => RootNavigation.Navigate(typeof(AccountsPage));
     }
 
@@ -39,6 +38,14 @@ public partial class MainWindow : FluentWindow
 
         Topmost = true;
         Topmost = false;
+    }
+
+    private void OnToastCloseClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: Toast toast })
+        {
+            Toasts.Dismiss(toast);
+        }
     }
 
     /// <summary>Creates each page once and keeps it, so page state survives navigation.</summary>

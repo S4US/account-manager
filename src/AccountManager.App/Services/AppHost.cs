@@ -6,6 +6,7 @@ using AccountManager.Core.Roblox;
 using AccountManager.Core.Security;
 using AccountManager.Core.Services;
 using AccountManager.Core.Storage;
+using AccountManager.Core.Updates;
 
 namespace AccountManager.App.Services;
 
@@ -30,6 +31,7 @@ public sealed class AppHost : IDisposable
         Instances = new InstanceManager(Accounts, Launcher, settings, Log, Discord);
         Scheduler = new ShutdownScheduler(() => Instances.KillAllRoblox(), Log);
         RemoteController = new RemoteController(Accounts, Instances, Scheduler, () => Settings.Current.StreamerMode);
+        Updates = new UpdateService(paths.Updates);
     }
 
     public static AppHost Current { get; set; } = null!;
@@ -59,6 +61,8 @@ public sealed class AppHost : IDisposable
     public RemoteController RemoteController { get; }
 
     public RemoteServer? Remote { get; private set; }
+
+    public UpdateService Updates { get; }
 
     public string PresetJson => File.Exists(Paths.PerformancePreset) ? File.ReadAllText(Paths.PerformancePreset) : ClientSettingsWriter.DefaultPresetJson;
 
@@ -157,6 +161,7 @@ public sealed class AppHost : IDisposable
         Scheduler.Dispose();
         Discord.Dispose();
         Api.Dispose();
+        Updates.Dispose();
         try
         {
             // Clients read the flag file at startup only, so restoring the user's own flags is safe now.
