@@ -1,0 +1,334 @@
+<Page
+    x:Class="AccountManager.App.Views.Pages.PerformancePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:conv="clr-namespace:AccountManager.App.Converters"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:vm="clr-namespace:AccountManager.App.ViewModels"
+    Title="Performance"
+    ScrollViewer.CanContentScroll="False"
+    d:DataContext="{d:DesignInstance Type=vm:PerformanceViewModel}"
+    mc:Ignorable="d">
+    <Page.Resources>
+        <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+        <conv:NotEmptyToVisibilityConverter x:Key="NotEmptyToVisibility" />
+
+        <Style x:Key="SettingNumber" TargetType="ui:NumberBox" BasedOn="{StaticResource {x:Type ui:NumberBox}}">
+            <Setter Property="Width" Value="140" />
+            <Setter Property="MaxDecimalPlaces" Value="0" />
+        </Style>
+        <Style x:Key="SettingCombo" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="MinWidth" Value="140" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="{StaticResource PagePadding}">
+            <TextBlock Style="{StaticResource PageTitle}" Text="Performance" />
+            <TextBlock Style="{StaticResource PageSubtitle}" Text="How clients are launched and how much of your PC they may use. Changes are saved right away." />
+
+            <!--  Launching  -->
+            <TextBlock Style="{StaticResource SectionTitle}" Text="Launching" />
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Run several clients at once" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Before each launch, releases Roblox's single-instance lock in the clients already open, so the new one doesn't close them." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding MultiInstance}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Release locks now" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Only needed to open another Roblox yourself, outside this app. Launches from here already do this." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:Button Command="{Binding ReleaseSingletonNowCommand}" Content="Release now" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Delay between launches" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Seconds to wait before starting the next client when launching several. Shorter delays can trigger Roblox's rate limits." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:NumberBox
+                    Maximum="300"
+                    Minimum="0"
+                    SmallChange="1"
+                    Style="{StaticResource SettingNumber}"
+                    Value="{Binding LaunchStaggerSeconds}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Wait for free memory" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Pause launching while less than this many MB of RAM is free. 0 turns it off." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:NumberBox
+                    LargeChange="1024"
+                    Maximum="65536"
+                    Minimum="0"
+                    SmallChange="256"
+                    Style="{StaticResource SettingNumber}"
+                    Value="{Binding LowMemoryThrottleMb}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="FPS cap" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Used for accounts without their own cap. Written to Roblox's own frame rate setting before each launch, which is kept locked while clients run so Roblox keeps the value. Your own setting comes back when the last client closes." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ComboBox
+                    ItemsSource="{x:Static vm:PerformanceViewModel.FpsCaps}"
+                    SelectedItem="{Binding DefaultFpsCap}"
+                    Style="{StaticResource SettingCombo}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="CPU limit" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Caps how much processor time each client gets. Useful on top of the FPS cap when clients still use too much CPU. Too low and the client may disconnect." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ComboBox
+                    ItemsSource="{x:Static vm:PerformanceViewModel.CpuLimits}"
+                    SelectedItem="{Binding CpuLimit}"
+                    Style="{StaticResource SettingCombo}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Minimize after launch" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Send each client to the taskbar once its window opens." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding MinimizeAfterLaunch}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Name client windows after their account" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Makes windows easy to tell apart on the taskbar." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding RenameWindows}" />
+            </ui:CardControl>
+
+            <!--  Per client  -->
+            <TextBlock Style="{StaticResource SectionTitle}" Text="Each client" />
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Below-normal priority" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Keeps the rest of your PC responsive while clients run." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding LowPriority}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Efficiency mode" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Windows runs clients on power-saving cores and lower clock speeds. Shows a leaf in Task Manager." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding EfficiencyMode}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Spread clients across processor cores" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="{Binding LogicalProcessors, StringFormat='Gives each client its own share of your {0} logical processors so one busy client doesn\'t slow the others.'}" />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding SpreadCpuAffinity}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Memory limit" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Hard cap on the RAM each client may use; anything above it goes to the page file. Limits set on an account take precedence. Too low a limit makes clients stutter." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ComboBox
+                    ItemsSource="{x:Static vm:PerformanceViewModel.RamLimits}"
+                    SelectedItem="{Binding GlobalRamLimit}"
+                    Style="{StaticResource SettingCombo}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Mute clients" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Silences every client started here in the Windows volume mixer." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding AutoMute}" />
+            </ui:CardControl>
+
+            <!--  Memory  -->
+            <TextBlock Style="{StaticResource SectionTitle}" Text="Memory upkeep" />
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Trim memory regularly" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Asks clients to release memory they aren't using, every few minutes." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding PeriodicTrim}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Trim interval" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Minutes between trims." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:NumberBox
+                    IsEnabled="{Binding PeriodicTrim}"
+                    Maximum="240"
+                    Minimum="1"
+                    SmallChange="1"
+                    Style="{StaticResource SettingNumber}"
+                    Value="{Binding TrimIntervalMinutes}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource SettingHeader}" Text="Purge standby memory" />
+                            <Border
+                                Margin="8,0,0,0"
+                                Padding="6,1"
+                                VerticalAlignment="Center"
+                                Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                CornerRadius="4">
+                                <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Administrator" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Also frees Windows' file cache with each trim. Only works when the app runs as administrator." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <Grid>
+                    <ui:ToggleSwitch IsChecked="{Binding PurgeStandbyList}" Visibility="{Binding IsElevated, Converter={StaticResource BoolToVisibility}}" />
+                    <ui:Button
+                        Command="{Binding RestartAsAdministratorCommand}"
+                        Content="Restart as administrator"
+                        Visibility="{Binding IsElevated, Converter={StaticResource InverseBoolToVisibility}}">
+                        <ui:Button.Icon>
+                            <ui:SymbolIcon Symbol="Shield24" />
+                        </ui:Button.Icon>
+                    </ui:Button>
+                </Grid>
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Remove old Roblox versions" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Deletes leftover Roblox installs from earlier updates when the app starts." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <StackPanel Orientation="Horizontal">
+                    <ui:Button
+                        Margin="0,0,12,0"
+                        Command="{Binding CleanVersionsNowCommand}"
+                        Content="Clean now" />
+                    <ui:ToggleSwitch IsChecked="{Binding CleanOldRobloxVersions}" />
+                </StackPanel>
+            </ui:CardControl>
+
+            <!--  Reliability  -->
+            <TextBlock Style="{StaticResource SectionTitle}" Text="Reliability" />
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Auto-restart" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Relaunch accounts that have auto-restart turned on after a crash or disconnect. Stops after repeated crashes." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding AutoRestartEnabled}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Leaving a game is not a disconnect" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="When off, a client that returns to the Roblox home screen is treated as disconnected and restarted." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding AllowLeavingGame}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Anti-AFK interval" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Minutes between nudges. Roblox disconnects idle players after 20 minutes." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:NumberBox
+                    Maximum="19"
+                    Minimum="1"
+                    SmallChange="1"
+                    Style="{StaticResource SettingNumber}"
+                    Value="{Binding AntiAfkIntervalMinutes}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Minimize again after a nudge" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Minimized clients are briefly restored to receive the nudge, then put back." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding AntiAfkRestoreMinimized}" />
+            </ui:CardControl>
+
+            <!--  Graphics preset  -->
+            <TextBlock Style="{StaticResource SectionTitle}" Text="Low-graphics preset" />
+            <ui:Card Padding="{StaticResource CardPadding}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource CaptionText}" Text="Roblox client flags written for accounts that use the low-graphics preset, as JSON. Roblox ignores many flags nowadays, so the effect may be small. Your own flag file is restored when the app closes." />
+                    <ui:TextBox
+                        Height="240"
+                        Margin="0,12,0,0"
+                        Style="{StaticResource MonoTextBox}"
+                        Text="{Binding PresetJson, UpdateSourceTrigger=PropertyChanged}" />
+                    <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Text="{Binding PresetMessage}"
+                            Visibility="{Binding PresetMessage, Converter={StaticResource NotEmptyToVisibility}}">
+                            <TextBlock.Style>
+                                <Style BasedOn="{StaticResource CaptionText}" TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding PresetHasError}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <ui:Button
+                                Margin="0,0,8,0"
+                                Command="{Binding ResetPresetCommand}"
+                                Content="Restore default" />
+                            <ui:Button
+                                Appearance="Primary"
+                                Command="{Binding SavePresetCommand}"
+                                Content="Save preset" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </ui:Card>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

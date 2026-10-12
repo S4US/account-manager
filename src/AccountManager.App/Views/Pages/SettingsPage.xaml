@@ -1,0 +1,232 @@
+<Page
+    x:Class="AccountManager.App.Views.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:conv="clr-namespace:AccountManager.App.Converters"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:vm="clr-namespace:AccountManager.App.ViewModels"
+    Title="Settings"
+    ScrollViewer.CanContentScroll="False"
+    d:DataContext="{d:DesignInstance Type=vm:SettingsViewModel}"
+    mc:Ignorable="d">
+    <Page.Resources>
+        <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+        <conv:NotEmptyToVisibilityConverter x:Key="NotEmptyToVisibility" />
+
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="{StaticResource PagePadding}">
+            <TextBlock Style="{StaticResource PageTitle}" Text="Settings" />
+            <TextBlock Style="{StaticResource PageSubtitle}" Text="Security, notifications and how the app looks." />
+
+            <!--  Master password  -->
+            <TextBlock Style="{StaticResource SectionTitle}" Text="Master password" />
+            <ui:Card Padding="{StaticResource CardPadding}">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon
+                            Margin="0,0,8,0"
+                            FontSize="16"
+                            Symbol="LockClosed24">
+                            <ui:SymbolIcon.Style>
+                                <Style TargetType="ui:SymbolIcon">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasPassword}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </ui:SymbolIcon.Style>
+                        </ui:SymbolIcon>
+                        <TextBlock
+                            Style="{StaticResource SettingHeader}"
+                            Text="A master password is set"
+                            Visibility="{Binding HasPassword, Converter={StaticResource BoolToVisibility}}" />
+                        <TextBlock
+                            Style="{StaticResource SettingHeader}"
+                            Text="No master password"
+                            Visibility="{Binding HasPassword, Converter={StaticResource InverseBoolToVisibility}}" />
+                    </StackPanel>
+                    <TextBlock
+                        Margin="0,4,0,0"
+                        Style="{StaticResource CaptionText}"
+                        Text="Saved sign-ins are always encrypted so only your Windows account can read them. A master password adds a second lock: the app asks for it every time it starts. If you forget it, your accounts have to be signed in again." />
+
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource FieldLabel}" Text="New password" />
+                            <ui:PasswordBox Password="{Binding NewPassword, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" PlaceholderText="At least 8 characters" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Style="{StaticResource FieldLabel}" Text="Confirm password" />
+                            <ui:PasswordBox Password="{Binding ConfirmPassword, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Text="{Binding PasswordMessage}"
+                            Visibility="{Binding PasswordMessage, Converter={StaticResource NotEmptyToVisibility}}">
+                            <TextBlock.Style>
+                                <Style BasedOn="{StaticResource CaptionText}" TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding PasswordHasError}" Value="True">
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <ui:Button
+                                Margin="0,0,8,0"
+                                Command="{Binding RemovePasswordCommand}"
+                                Content="Remove password"
+                                Visibility="{Binding HasPassword, Converter={StaticResource BoolToVisibility}}" />
+                            <ui:Button Appearance="Primary" Command="{Binding SetPasswordCommand}">
+                                <ui:Button.Style>
+                                    <Style BasedOn="{StaticResource {x:Type ui:Button}}" TargetType="ui:Button">
+                                        <Setter Property="Content" Value="Set password" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding HasPassword}" Value="True">
+                                                <Setter Property="Content" Value="Change password" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:Button.Style>
+                            </ui:Button>
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </ui:Card>
+
+            <!--  Discord  -->
+            <TextBlock Style="{StaticResource SectionTitle}" Text="Discord notifications" />
+            <ui:Card Padding="{StaticResource CardPadding}">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource CaptionText}" Text="Post a message to a Discord channel when a client crashes or is restarted. Create a webhook in the channel's settings under Integrations and paste its URL here." />
+                    <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBox
+                            ClearButtonEnabled="True"
+                            PlaceholderText="https://discord.com/api/webhooks/…"
+                            Text="{Binding WebhookUrl, UpdateSourceTrigger=PropertyChanged}" />
+                        <StackPanel Grid.Column="1" Margin="8,0,0,0" Orientation="Horizontal">
+                            <ui:Button
+                                Margin="0,0,8,0"
+                                Command="{Binding TestWebhookCommand}"
+                                Content="Send test" />
+                            <ui:Button
+                                Appearance="Primary"
+                                Command="{Binding SaveWebhookCommand}"
+                                Content="Save" />
+                        </StackPanel>
+                    </Grid>
+                </StackPanel>
+            </ui:Card>
+            <ui:CardControl Margin="0,4,0,0" Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Notify about crashes" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Send a message when a client crashes, disconnects or stops restarting." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding NotifyOnCrash}" />
+            </ui:CardControl>
+
+            <!--  Interface  -->
+            <TextBlock Style="{StaticResource SectionTitle}" Text="Interface" />
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Streamer mode" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Hides usernames and avatars here and in the remote panel, so they don't show up on stream or in screenshots." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding StreamerMode}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Confirm before closing all clients" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Ask first when closing every Roblox window at once." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding ConfirmKillAll}" />
+            </ui:CardControl>
+
+            <!--  About  -->
+            <TextBlock Style="{StaticResource SectionTitle}" Text="About" />
+            <ui:Card Padding="{StaticResource CardPadding}">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Image
+                        Width="40"
+                        Height="40"
+                        Margin="0,0,14,0"
+                        VerticalAlignment="Top"
+                        Source="pack://application:,,,/Assets/logo.png" />
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="{Binding Version, StringFormat='Account manager {0}'}" />
+                        <TextBlock
+                            Margin="0,2,0,0"
+                            Style="{StaticResource CaptionText}"
+                            Text="Nothing is sent anywhere except roblox.com and, if you set one up, your Discord webhook. Not affiliated with Roblox. Running several clients at once may go against Roblox's Terms of Use." />
+                        <TextBlock
+                            Margin="0,8,0,0"
+                            FontFamily="{StaticResource MonoFont}"
+                            FontSize="12"
+                            Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                            Text="{Binding DataFolder}"
+                            TextTrimming="CharacterEllipsis"
+                            ToolTip="Where accounts, settings and logs are stored" />
+                    </StackPanel>
+                    <StackPanel
+                        Grid.Column="2"
+                        Margin="12,0,0,0"
+                        VerticalAlignment="Top"
+                        Orientation="Horizontal">
+                        <ui:Button
+                            Margin="0,0,8,0"
+                            Command="{Binding OpenDataFolderCommand}"
+                            Content="Data folder">
+                            <ui:Button.Icon>
+                                <ui:SymbolIcon Symbol="FolderOpen24" />
+                            </ui:Button.Icon>
+                        </ui:Button>
+                        <ui:Button Command="{Binding OpenRepositoryCommand}" Content="Source code">
+                            <ui:Button.Icon>
+                                <ui:SymbolIcon Symbol="Code24" />
+                            </ui:Button.Icon>
+                        </ui:Button>
+                    </StackPanel>
+                </Grid>
+            </ui:Card>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

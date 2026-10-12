@@ -1,0 +1,373 @@
+<Page
+    x:Class="AccountManager.App.Views.Pages.AccountsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:conv="clr-namespace:AccountManager.App.Converters"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:vm="clr-namespace:AccountManager.App.ViewModels"
+    Title="Accounts"
+    ScrollViewer.CanContentScroll="False"
+    d:DataContext="{d:DesignInstance Type=vm:AccountsViewModel}"
+    mc:Ignorable="d">
+    <Page.Resources>
+        <conv:ToneToBrushConverter x:Key="ToneToBrush" />
+        <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+        <conv:NotEmptyToVisibilityConverter x:Key="NotEmptyToVisibility" />
+        <conv:InverseBoolConverter x:Key="InverseBool" />
+    </Page.Resources>
+
+    <Grid Margin="{StaticResource PagePadding}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!--  Header  -->
+        <Grid Grid.Row="0" Margin="0,0,0,20">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel>
+                <TextBlock Style="{StaticResource PageTitle}" Text="Accounts" />
+                <TextBlock Style="{StaticResource PageSubtitle}" Text="{Binding Summary}" />
+            </StackPanel>
+            <StackPanel
+                Grid.Column="1"
+                VerticalAlignment="Bottom"
+                Orientation="Horizontal">
+                <ui:TextBox
+                    Width="240"
+                    Margin="0,0,8,0"
+                    ClearButtonEnabled="True"
+                    PlaceholderText="Search accounts"
+                    Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}">
+                    <ui:TextBox.Icon>
+                        <ui:SymbolIcon Symbol="Search24" />
+                    </ui:TextBox.Icon>
+                </ui:TextBox>
+                <ui:Button
+                    Margin="0,0,8,0"
+                    Command="{Binding ImportCookiesCommand}"
+                    Content="Import"
+                    IsEnabled="{Binding IsImporting, Converter={StaticResource InverseBool}}"
+                    ToolTip="Add accounts from saved session cookies">
+                    <ui:Button.Icon>
+                        <ui:SymbolIcon Symbol="ClipboardPaste24" />
+                    </ui:Button.Icon>
+                </ui:Button>
+                <ui:Button
+                    Appearance="Primary"
+                    Command="{Binding SignInWithBrowserCommand}"
+                    Content="Add account">
+                    <ui:Button.Icon>
+                        <ui:SymbolIcon Symbol="PersonAdd24" />
+                    </ui:Button.Icon>
+                </ui:Button>
+            </StackPanel>
+        </Grid>
+
+        <!--  Launch bar  -->
+        <ui:Card Grid.Row="1" Margin="0,0,0,16" Padding="16,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="160" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="260" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox
+                            HorizontalAlignment="Stretch"
+                            ItemsSource="{Binding JoinModes}"
+                            SelectedItem="{Binding SelectedJoinMode}" />
+
+                        <!--  Join a game  -->
+                        <ui:TextBox
+                            Grid.Column="2"
+                            ClearButtonEnabled="True"
+                            PlaceholderText="Place ID, game link or private server link (optional)"
+                            Text="{Binding JoinInput, UpdateSourceTrigger=PropertyChanged}"
+                            Visibility="{Binding FollowMode, Converter={StaticResource InverseBoolToVisibility}}">
+                            <ui:TextBox.Icon>
+                                <ui:SymbolIcon Symbol="Link24" />
+                            </ui:TextBox.Icon>
+                        </ui:TextBox>
+                        <ui:TextBox
+                            Grid.Column="4"
+                            ClearButtonEnabled="True"
+                            FontFamily="{StaticResource MonoFont}"
+                            PlaceholderText="Server job ID (optional)"
+                            Text="{Binding JobIdInput, UpdateSourceTrigger=PropertyChanged}"
+                            ToolTip="Joins one specific server of the game on the left. Copy the job ID from the server, or paste a link that contains gameInstanceId."
+                            Visibility="{Binding FollowMode, Converter={StaticResource InverseBoolToVisibility}}">
+                            <ui:TextBox.Icon>
+                                <ui:SymbolIcon Symbol="Server24" />
+                            </ui:TextBox.Icon>
+                        </ui:TextBox>
+
+                        <!--  Follow a player: type any username, or pick one of your accounts  -->
+                        <ComboBox
+                            Grid.Column="2"
+                            Grid.ColumnSpan="3"
+                            HorizontalAlignment="Stretch"
+                            IsEditable="True"
+                            IsTextSearchEnabled="False"
+                            ItemsSource="{Binding FollowSuggestions}"
+                            Text="{Binding FollowInput, UpdateSourceTrigger=PropertyChanged}"
+                            ToolTip="Type any Roblox username, or pick one of your accounts. Launched accounts join the game that player is in."
+                            Visibility="{Binding FollowMode, Converter={StaticResource BoolToVisibility}}" />
+                    </Grid>
+                    <TextBlock
+                        Margin="2,6,0,0"
+                        Style="{StaticResource CaptionText}"
+                        Text="{Binding JoinHint}"
+                        Visibility="{Binding JoinHint, Converter={StaticResource NotEmptyToVisibility}}" />
+                </StackPanel>
+                <StackPanel
+                    Grid.Column="1"
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Top"
+                    Orientation="Horizontal">
+                    <ui:Button
+                        x:Name="LaunchButton"
+                        MinWidth="140"
+                        Appearance="Primary"
+                        Command="{Binding LaunchSelectedCommand}">
+                        <ui:Button.Icon>
+                            <ui:SymbolIcon Symbol="Play24" />
+                        </ui:Button.Icon>
+                        <ui:Button.Style>
+                            <Style BasedOn="{StaticResource {x:Type ui:Button}}" TargetType="ui:Button">
+                                <Setter Property="Content" Value="Launch all" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasSelection}" Value="True">
+                                        <Setter Property="Content" Value="Launch selected" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ui:Button.Style>
+                    </ui:Button>
+                    <ui:Button
+                        Margin="8,0,0,0"
+                        Command="{Binding StopSelectedCommand}"
+                        Content="Stop selected"
+                        IsEnabled="{Binding HasSelection}">
+                        <ui:Button.Icon>
+                            <ui:SymbolIcon Symbol="Stop24" />
+                        </ui:Button.Icon>
+                    </ui:Button>
+                </StackPanel>
+            </Grid>
+        </ui:Card>
+
+        <!--  Column headers  -->
+        <Grid Grid.Row="2" Margin="13,0,13,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="48" />
+                <ColumnDefinition Width="*" MinWidth="160" />
+                <ColumnDefinition Width="180" />
+                <ColumnDefinition Width="200" />
+                <ColumnDefinition Width="84" />
+                <ColumnDefinition Width="64" />
+                <ColumnDefinition Width="76" />
+                <ColumnDefinition Width="80" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="1" Style="{StaticResource ColumnHeader}" Text="Account" />
+            <TextBlock Grid.Column="2" Style="{StaticResource ColumnHeader}" Text="Status" />
+            <TextBlock Grid.Column="3" Style="{StaticResource ColumnHeader}" Text="Joins" />
+            <TextBlock Grid.Column="4" HorizontalAlignment="Right" Style="{StaticResource ColumnHeader}" Text="Memory" />
+            <TextBlock Grid.Column="5" HorizontalAlignment="Right" Style="{StaticResource ColumnHeader}" Text="CPU" />
+            <TextBlock Grid.Column="6" HorizontalAlignment="Right" Style="{StaticResource ColumnHeader}" Text="Uptime" />
+        </Grid>
+
+        <!--  Rows  -->
+        <ListView
+            x:Name="AccountList"
+            Grid.Row="3"
+            Background="Transparent"
+            BorderThickness="0"
+            ItemContainerStyle="{StaticResource AccountRow}"
+            ItemsSource="{Binding View}"
+            MouseDoubleClick="OnRowDoubleClick"
+            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+            SelectionChanged="OnSelectionChanged"
+            SelectionMode="Extended"
+            VirtualizingPanel.IsVirtualizing="True"
+            VirtualizingPanel.VirtualizationMode="Recycling">
+            <ListView.ItemTemplate>
+                <DataTemplate DataType="{x:Type vm:AccountItemViewModel}">
+                    <Grid Background="Transparent" MouseRightButtonUp="OnRowRightClick">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="48" />
+                            <ColumnDefinition Width="*" MinWidth="160" />
+                            <ColumnDefinition Width="180" />
+                            <ColumnDefinition Width="200" />
+                            <ColumnDefinition Width="84" />
+                            <ColumnDefinition Width="64" />
+                            <ColumnDefinition Width="76" />
+                            <ColumnDefinition Width="80" />
+                        </Grid.ColumnDefinitions>
+
+                        <!--  Avatar  -->
+                        <Grid Width="36" Height="36" HorizontalAlignment="Left">
+                            <Ellipse Fill="{DynamicResource ControlFillColorSecondaryBrush}" Stroke="{DynamicResource ControlStrokeColorDefaultBrush}" />
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                FontWeight="SemiBold"
+                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                Text="{Binding Initial}" />
+                            <Ellipse Visibility="{Binding AvatarUrl, Converter={StaticResource NotEmptyToVisibility}}">
+                                <Ellipse.Fill>
+                                    <ImageBrush ImageSource="{Binding AvatarUrl, TargetNullValue={x:Null}}" Stretch="UniformToFill" />
+                                </Ellipse.Fill>
+                            </Ellipse>
+                        </Grid>
+
+                        <!--  Name  -->
+                        <StackPanel Grid.Column="1" Margin="0,0,12,0" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock
+                                    FontSize="14"
+                                    FontWeight="SemiBold"
+                                    Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                    Text="{Binding Title}"
+                                    TextTrimming="CharacterEllipsis" />
+                                <ui:SymbolIcon
+                                    Margin="6,0,0,0"
+                                    FontSize="14"
+                                    Filled="True"
+                                    Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                                    Symbol="Star24"
+                                    ToolTip="Favorite"
+                                    Visibility="{Binding IsFavorite, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
+                            <TextBlock
+                                Style="{StaticResource CaptionText}"
+                                Text="{Binding SubtitleLine}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="NoWrap" />
+                        </StackPanel>
+
+                        <!--  Status  -->
+                        <StackPanel Grid.Column="2" Margin="0,0,12,0" VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Margin="0,0,8,0" Fill="{Binding Tone, Converter={StaticResource ToneToBrush}}" Style="{StaticResource StatusDot}" />
+                                <TextBlock FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Text="{Binding StatusText}" />
+                            </StackPanel>
+                            <TextBlock
+                                Margin="16,1,0,0"
+                                Style="{StaticResource CaptionText}"
+                                Text="{Binding Detail}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="NoWrap"
+                                ToolTip="{Binding Detail}"
+                                Visibility="{Binding Detail, Converter={StaticResource NotEmptyToVisibility}}" />
+                        </StackPanel>
+
+                        <!--  Join target and automation  -->
+                        <StackPanel Grid.Column="3" Margin="0,0,12,0" VerticalAlignment="Center">
+                            <TextBlock
+                                FontSize="13"
+                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                Text="{Binding TargetText}"
+                                TextTrimming="CharacterEllipsis" />
+                            <StackPanel Margin="0,2,0,0" Orientation="Horizontal">
+                                <Border
+                                    Margin="0,0,4,0"
+                                    Padding="6,1"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                    CornerRadius="4"
+                                    ToolTip="Restarts automatically after a crash or disconnect"
+                                    Visibility="{Binding AutoRestart, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Auto-restart" />
+                                </Border>
+                                <Border
+                                    Padding="6,1"
+                                    Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                    CornerRadius="4"
+                                    ToolTip="Kept active so it isn't kicked for being idle"
+                                    Visibility="{Binding AntiAfk, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Anti-AFK" />
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Grid.Column="4" Style="{StaticResource NumericText}" Text="{Binding MemoryText}" />
+                        <TextBlock Grid.Column="5" Style="{StaticResource NumericText}" Text="{Binding CpuText}" />
+                        <TextBlock Grid.Column="6" Style="{StaticResource NumericText}" Text="{Binding UptimeText}" />
+
+                        <!--  Actions  -->
+                        <StackPanel
+                            Grid.Column="7"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Orientation="Horizontal">
+                            <ui:Button
+                                Command="{Binding DataContext.LaunchCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                CommandParameter="{Binding}"
+                                Style="{StaticResource RowIconButton}"
+                                ToolTip="Launch"
+                                Visibility="{Binding IsActive, Converter={StaticResource InverseBoolToVisibility}}">
+                                <ui:SymbolIcon Foreground="{DynamicResource SystemFillColorSuccessBrush}" Symbol="Play24" Filled="True" />
+                            </ui:Button>
+                            <ui:Button
+                                Command="{Binding DataContext.StopCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                CommandParameter="{Binding}"
+                                Style="{StaticResource RowIconButton}"
+                                ToolTip="Stop"
+                                Visibility="{Binding IsActive, Converter={StaticResource BoolToVisibility}}">
+                                <ui:SymbolIcon Foreground="{DynamicResource SystemFillColorCriticalBrush}" Symbol="Stop24" Filled="True" />
+                            </ui:Button>
+                            <ui:Button Click="OnMoreClick" Style="{StaticResource RowIconButton}" ToolTip="More actions">
+                                <ui:SymbolIcon Symbol="MoreHorizontal24" />
+                            </ui:Button>
+                        </StackPanel>
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!--  Empty state  -->
+        <StackPanel
+            Grid.Row="3"
+            MaxWidth="420"
+            Margin="0,48,0,0"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Top"
+            Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVisibility}}">
+            <ui:SymbolIcon
+                HorizontalAlignment="Center"
+                FontSize="40"
+                Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                Symbol="People24" />
+            <TextBlock
+                Margin="0,12,0,4"
+                HorizontalAlignment="Center"
+                FontSize="18"
+                FontWeight="SemiBold"
+                Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                Text="No accounts yet" />
+            <TextBlock
+                HorizontalAlignment="Center"
+                Style="{StaticResource CaptionText}"
+                Text="Sign in with the browser to add your first account, or import accounts you've saved before."
+                TextAlignment="Center" />
+            <StackPanel Margin="0,16,0,0" HorizontalAlignment="Center" Orientation="Horizontal">
+                <ui:Button Appearance="Primary" Command="{Binding SignInWithBrowserCommand}" Content="Add account" />
+                <ui:Button Margin="8,0,0,0" Command="{Binding ImportCookiesCommand}" Content="Import" />
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</Page>

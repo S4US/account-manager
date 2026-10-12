@@ -1,0 +1,86 @@
+<UserControl
+    x:Class="AccountManager.App.Views.AccountEditorView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:vm="clr-namespace:AccountManager.App.ViewModels"
+    Width="540"
+    d:DataContext="{d:DesignInstance Type=vm:AccountEditorViewModel}"
+    mc:Ignorable="d">
+    <UserControl.Resources>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,0,6" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Style>
+        <Style x:Key="Group" TargetType="TextBlock" BasedOn="{StaticResource SectionTitle}">
+            <Setter Property="Margin" Value="0,16,0,10" />
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer MaxHeight="520" Padding="0,0,12,0" VerticalScrollBarVisibility="Auto">
+        <StackPanel>
+            <TextBlock Margin="0,0,0,10" Style="{StaticResource SectionTitle}" Text="Profile" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource FieldLabel}" Text="Display name" />
+                    <ui:TextBox PlaceholderText="{Binding Username}" Text="{Binding Alias, UpdateSourceTrigger=PropertyChanged}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Style="{StaticResource FieldLabel}" Text="Tags" />
+                    <ui:TextBox PlaceholderText="farm, main, trading" Text="{Binding Tags, UpdateSourceTrigger=PropertyChanged}" />
+                </StackPanel>
+            </Grid>
+            <TextBlock Margin="0,12,0,6" Style="{StaticResource FieldLabel}" Text="Notes" />
+            <ui:TextBox
+                MinHeight="64"
+                AcceptsReturn="True"
+                PlaceholderText="Anything you want to remember about this account"
+                Text="{Binding Notes, UpdateSourceTrigger=PropertyChanged}"
+                TextWrapping="Wrap" />
+            <CheckBox Margin="0,10,0,0" Content="Favorite (shown at the top of the list)" IsChecked="{Binding IsFavorite}" />
+
+            <TextBlock Style="{StaticResource Group}" Text="When launched" />
+            <TextBlock Style="{StaticResource FieldLabel}" Text="Join" />
+            <ui:TextBox PlaceholderText="Place ID, game link or private server link" Text="{Binding JoinInput, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Margin="2,6,0,0" Style="{StaticResource CaptionText}" Text="{Binding JoinHint}" />
+            <TextBlock Margin="0,12,0,6" Style="{StaticResource FieldLabel}" Text="Or follow a user into their game" />
+            <ui:TextBox PlaceholderText="Roblox username (overrides the join link)" Text="{Binding FollowUsername, UpdateSourceTrigger=PropertyChanged}" />
+
+            <TextBlock Style="{StaticResource Group}" Text="Performance" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Style="{StaticResource FieldLabel}" Text="FPS cap" />
+                    <ComboBox
+                        HorizontalAlignment="Stretch"
+                        ItemsSource="{x:Static vm:AccountEditorViewModel.FpsCaps}"
+                        SelectedItem="{Binding FpsCap}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Style="{StaticResource FieldLabel}" Text="Memory limit" />
+                    <ComboBox
+                        HorizontalAlignment="Stretch"
+                        ItemsSource="{x:Static vm:AccountEditorViewModel.RamLimits}"
+                        SelectedItem="{Binding RamLimit}" />
+                </StackPanel>
+            </Grid>
+            <ui:ToggleSwitch Margin="0,14,0,0" Content="Use the low-graphics preset" IsChecked="{Binding UsePerformancePreset}" />
+
+            <TextBlock Style="{StaticResource Group}" Text="Reliability" />
+            <ui:ToggleSwitch Content="Restart automatically after a crash or disconnect" IsChecked="{Binding AutoRestart}" />
+            <ui:ToggleSwitch Margin="0,10,0,0" Content="Anti-AFK: keep the session active while idle" IsChecked="{Binding AntiAfk}" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

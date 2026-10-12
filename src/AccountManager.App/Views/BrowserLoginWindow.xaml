@@ -1,0 +1,50 @@
+<ui:FluentWindow
+    x:Class="AccountManager.App.Views.BrowserLoginWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+    Title="Sign in to Roblox"
+    Width="520"
+    Height="760"
+    ExtendsContentIntoTitleBar="True"
+    ResizeMode="CanResize"
+    WindowBackdropType="Mica"
+    WindowStartupLocation="CenterOwner">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <ui:TitleBar Title="Sign in to Roblox" ShowMaximize="False" ShowMinimize="False" />
+        <Border
+            Grid.Row="1"
+            Padding="16,10"
+            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+            BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <ui:SymbolIcon
+                    Margin="0,0,10,0"
+                    FontSize="16"
+                    Foreground="{DynamicResource SystemFillColorSuccessBrush}"
+                    Symbol="LockClosed24" />
+                <StackPanel Grid.Column="1">
+                    <TextBlock x:Name="AddressText" FontSize="13" Foreground="{DynamicResource TextFillColorPrimaryBrush}" Text="www.roblox.com" />
+                    <TextBlock x:Name="HintText" Style="{StaticResource CaptionText}" Text="Sign in as usual. This window closes by itself once you're signed in." />
+                </StackPanel>
+            </Grid>
+        </Border>
+        <wv2:WebView2 x:Name="Browser" Grid.Row="2" />
+        <ui:ProgressRing
+            x:Name="Loading"
+            Grid.Row="2"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            IsIndeterminate="True" />
+    </Grid>
+</ui:FluentWindow>

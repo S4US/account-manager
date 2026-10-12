@@ -9,4 +9,8 @@
     <Product>Account manager</Product>
     <Copyright>Copyright (c) 2026 Sasu Sipola</Copyright>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!-- Release builds ship without .pdb files next to the exe. -->
+    <DebugType>none</DebugType>
+  </PropertyGroup>
 </Project>

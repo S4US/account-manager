@@ -1,0 +1,65 @@
+<ui:FluentWindow
+    x:Class="AccountManager.App.Views.RobloxBrowserWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+    Title="Roblox"
+    Width="1180"
+    Height="820"
+    ExtendsContentIntoTitleBar="True"
+    WindowBackdropType="Mica"
+    WindowStartupLocation="CenterScreen">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <ui:TitleBar x:Name="TitleBar" Title="Roblox" />
+        <Border
+            Grid.Row="1"
+            Padding="12,8"
+            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+            BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                    <ui:Button x:Name="BackButton" Click="OnBack" Style="{StaticResource RowIconButton}" ToolTip="Back">
+                        <ui:SymbolIcon Symbol="ArrowLeft24" />
+                    </ui:Button>
+                    <ui:Button Click="OnReload" Style="{StaticResource RowIconButton}" ToolTip="Reload">
+                        <ui:SymbolIcon Symbol="ArrowClockwise24" />
+                    </ui:Button>
+                </StackPanel>
+                <TextBlock
+                    x:Name="AddressText"
+                    Grid.Column="1"
+                    Margin="12,0"
+                    VerticalAlignment="Center"
+                    FontSize="13"
+                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                    TextTrimming="CharacterEllipsis" />
+                <ui:Button Grid.Column="2" Click="OnOpenExternal" Content="Open in my browser" ToolTip="Opens this page in your default browser (not signed in as this account)">
+                    <ui:Button.Icon>
+                        <ui:SymbolIcon Symbol="Open24" />
+                    </ui:Button.Icon>
+                </ui:Button>
+            </Grid>
+        </Border>
+        <ui:InfoBar
+            Grid.Row="2"
+            Margin="12,8,12,0"
+            IsClosable="True"
+            IsOpen="True"
+            Message="Don't use Log out here: it ends the saved session and the account will need to sign in again."
+            Severity="Informational"
+            Title="Signed in as this account" />
+        <wv2:WebView2 x:Name="Browser" Grid.Row="3" Margin="0,8,0,0" />
+    </Grid>
+</ui:FluentWindow>
