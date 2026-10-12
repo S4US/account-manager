@@ -52,6 +52,24 @@ public static partial class FramerateCapFile
         return true;
     }
 
+    /// <summary>
+    /// For a launch without a cap while other capped clients may still run: puts the user's own value in the file
+    /// for this launch but keeps the backup and the lock, so the final <see cref="RestoreUserCap"/> still happens.
+    /// Does nothing when no backup exists (the file already holds the user's value).
+    /// </summary>
+    public static bool ApplyUserValueForLaunch(string path)
+    {
+        string backup = path + BackupSuffix;
+        if (!File.Exists(backup) || !File.Exists(path))
+        {
+            return false;
+        }
+
+        WriteSavedValue(path, File.ReadAllText(backup));
+        File.SetAttributes(path, File.GetAttributes(path) | FileAttributes.ReadOnly);
+        return true;
+    }
+
     /// <summary>Unlocks the file, puts the user's own value back and deletes the backup. Does nothing when no backup exists.</summary>
     public static bool RestoreUserCap(string path)
     {
@@ -61,8 +79,15 @@ public static partial class FramerateCapFile
             return false;
         }
 
-        string saved = File.ReadAllText(backup).Trim();
-        if (int.TryParse(saved, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+        WriteSavedValue(path, File.ReadAllText(backup));
+        ClearReadOnly(path);
+        File.Delete(backup);
+        return true;
+    }
+
+    private static void WriteSavedValue(string path, string saved)
+    {
+        if (int.TryParse(saved.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
         {
             Write(path, value);
         }
@@ -70,10 +95,6 @@ public static partial class FramerateCapFile
         {
             Remove(path);
         }
-
-        ClearReadOnly(path);
-        File.Delete(backup);
-        return true;
     }
 
     private static void Remove(string path)

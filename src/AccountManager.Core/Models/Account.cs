@@ -21,6 +21,9 @@ public sealed class Account
 
     public bool IsFavorite { get; set; }
 
+    /// <summary>Optional group shown as a section in the account list. Empty = no group.</summary>
+    public string Group { get; set; } = "";
+
     public int SortOrder { get; set; }
 
     /// <summary>Random per-account id Roblox uses to correlate launches. Also used to find the account's process.</summary>
@@ -28,6 +31,9 @@ public sealed class Account
 
     /// <summary>Encrypted .ROBLOSECURITY value (see <see cref="Security.Vault"/>).</summary>
     public string EncryptedCookie { get; set; } = "";
+
+    /// <summary>Optional account password, encrypted like the cookie. Empty when none was saved.</summary>
+    public string EncryptedPassword { get; set; } = "";
 
     public string AvatarUrl { get; set; } = "";
 
@@ -46,6 +52,12 @@ public sealed class Account
 
     /// <summary>Per-account working set cap in MB. 0 = use the global setting.</summary>
     public int RamLimitMb { get; set; }
+
+    /// <summary>
+    /// Apply performance optimizations to this account's client: FPS cap, low-graphics preset, CPU and memory
+    /// limits, priority, efficiency mode, core spreading and memory trimming. Off runs it like a normal Roblox client.
+    /// </summary>
+    public bool Optimize { get; set; } = true;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 

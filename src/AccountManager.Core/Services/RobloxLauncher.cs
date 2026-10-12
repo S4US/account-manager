@@ -147,7 +147,8 @@ public sealed class RobloxLauncher
             }
             else
             {
-                FramerateCapFile.RestoreUserCap(path);
+                // Other managed clients may still run with a cap; the full restore waits until they've all closed.
+                FramerateCapFile.ApplyUserValueForLaunch(path);
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

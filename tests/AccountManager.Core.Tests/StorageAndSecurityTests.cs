@@ -157,6 +157,109 @@ public sealed class AccountStoreTests : IDisposable
         Assert.Equal(["b", "a", "c"], store.GetAll().Select(a => a.Username));
     }
 
+    [Fact]
+    public void Upgrading_a_version_1_database_keeps_accounts_optimized()
+    {
+        string path = Path.Combine(_dir, "accounts.db");
+        using (var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path}"))
+        {
+            // The schema as version 1 shipped it, with one account.
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                CREATE TABLE Accounts (Id INTEGER PRIMARY KEY AUTOINCREMENT, UserId INTEGER NOT NULL, Username TEXT NOT NULL,
+                    DisplayName TEXT NOT NULL DEFAULT '', Alias TEXT NOT NULL DEFAULT '', Notes TEXT NOT NULL DEFAULT '',
+                    Tags TEXT NOT NULL DEFAULT '', IsFavorite INTEGER NOT NULL DEFAULT 0, SortOrder INTEGER NOT NULL DEFAULT 0,
+                    BrowserTrackerId TEXT NOT NULL, EncryptedCookie TEXT NOT NULL, AvatarUrl TEXT NOT NULL DEFAULT '',
+                    DefaultTarget TEXT NOT NULL DEFAULT '', FpsCap INTEGER NOT NULL DEFAULT 0,
+                    UsePerformancePreset INTEGER NOT NULL DEFAULT 1, AutoRestart INTEGER NOT NULL DEFAULT 0,
+                    AntiAfk INTEGER NOT NULL DEFAULT 0, RamLimitMb INTEGER NOT NULL DEFAULT 0, CreatedAt TEXT NOT NULL,
+                    LastLaunchedAt TEXT NULL, CookieValidatedAt TEXT NULL);
+                INSERT INTO Accounts (UserId, Username, BrowserTrackerId, EncryptedCookie, CreatedAt) VALUES (7, 'old', '1', 'x', '2026-10-01T00:00:00Z');
+                PRAGMA user_version = 1;
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        var store = new AccountStore(path);
+        store.Initialize();
+        Account old = Assert.Single(store.GetAll());
+        Assert.True(old.Optimize);
+
+        old.Optimize = false;
+        store.Save(old);
+        Assert.False(store.FindByUserId(7)!.Optimize);
+
+        // Running the upgrade again is harmless.
+        store.Initialize();
+        Assert.False(store.FindByUserId(7)!.Optimize);
+
+        // Version 3 columns came along with the upgrade.
+        Account upgraded = store.FindByUserId(7)!;
+        Assert.Equal("", upgraded.Group);
+        Assert.Equal("", upgraded.EncryptedPassword);
+        upgraded.Group = " Farm ";
+        upgraded.EncryptedPassword = "v1:secret";
+        store.Save(upgraded);
+        Assert.Equal("Farm", store.FindByUserId(7)!.Group);
+        Assert.Equal("v1:secret", store.FindByUserId(7)!.EncryptedPassword);
+    }
+
+    [Fact]
+    public void Passwords_are_encrypted_and_groups_listed()
+    {
+        var vault = new Vault(Path.Combine(_dir, "vault.json"));
+        vault.Create();
+        var store = new AccountStore(Path.Combine(_dir, "accounts.db"));
+        store.Initialize();
+        using var api = new Roblox.RobloxApi();
+        var service = new Services.AccountService(store, vault, api);
+        store.Save(new Account { UserId = 1, Username = "a", EncryptedCookie = "x", Group = "farm" });
+        store.Save(new Account { UserId = 2, Username = "b", EncryptedCookie = "x", Group = "Farm" });
+        store.Save(new Account { UserId = 3, Username = "c", EncryptedCookie = "x", Group = "alts" });
+        store.Save(new Account { UserId = 4, Username = "d", EncryptedCookie = "x" });
+        service.Load();
+
+        Assert.Equal(["alts", "farm"], service.Groups);
+
+        Account d = service.Find(store.FindByUserId(4)!.Id)!;
+        service.SetPassword(d, "hunter2");
+        service.Save(d);
+        Account reloaded = service.Find(d.Id)!;
+        Assert.DoesNotContain("hunter2", reloaded.EncryptedPassword);
+        Assert.Equal("hunter2", service.GetPassword(reloaded));
+
+        service.SetPassword(reloaded, "");
+        Assert.Equal("", service.GetPassword(reloaded));
+    }
+
+    [Fact]
+    public void Moves_accounts_between_groups_and_reorders()
+    {
+        var vault = new Vault(Path.Combine(_dir, "vault.json"));
+        vault.Create();
+        var store = new AccountStore(Path.Combine(_dir, "accounts.db"));
+        store.Initialize();
+        using var api = new Roblox.RobloxApi();
+        var service = new Services.AccountService(store, vault, api);
+        foreach (int id in new[] { 1, 2, 3 })
+        {
+            store.Save(new Account { UserId = id, Username = $"u{id}", EncryptedCookie = "x", SortOrder = id });
+        }
+
+        service.Load();
+        List<Account> all = service.All.ToList();
+        service.MoveToGroup(all.Take(2), "main");
+        Assert.Equal(2, service.All.Count(a => a.Group == "main"));
+
+        // Drag u3 to the top and into "main" in one step.
+        Account u3 = service.All.Single(a => a.Username == "u3");
+        List<Account> order = [u3, .. service.All.Where(a => a.Id != u3.Id)];
+        service.Reorder(order, u3, "main");
+        Assert.Equal(["u3", "u1", "u2"], service.All.Select(a => a.Username));
+        Assert.All(service.All, a => Assert.Equal("main", a.Group));
+    }
+
     public void Dispose()
     {
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
@@ -311,6 +414,32 @@ public sealed class FramerateCapFileTests : IDisposable
         Assert.True(FramerateCapFile.RestoreUserCap(_path));
         Assert.Equal(144, FramerateCapFile.Read(_path));
         Assert.False(FramerateCapFile.RestoreUserCap(_path));
+    }
+
+    [Fact]
+    public void An_uncapped_launch_mid_session_uses_the_users_value_and_keeps_the_backup()
+    {
+        File.WriteAllText(_path, "<roblox><Item><Properties>\n<int name=\"FramerateCap\">60</int>\n</Properties></Item></roblox>");
+
+        FramerateCapFile.ApplyForLaunch(_path, 5);
+        Assert.True(FramerateCapFile.ApplyUserValueForLaunch(_path));
+        Assert.Equal(60, FramerateCapFile.Read(_path));
+        Assert.True(File.GetAttributes(_path).HasFlag(FileAttributes.ReadOnly));
+
+        // A capped client exiting later writes its cap back; the final restore still has the user's value.
+        FramerateCapFile.Write(_path, 5);
+        Assert.True(FramerateCapFile.RestoreUserCap(_path));
+        Assert.Equal(60, FramerateCapFile.Read(_path));
+    }
+
+    [Fact]
+    public void An_uncapped_launch_without_a_session_changes_nothing()
+    {
+        File.WriteAllText(_path, "<roblox><Item><Properties>\n<int name=\"FramerateCap\">144</int>\n</Properties></Item></roblox>");
+
+        Assert.False(FramerateCapFile.ApplyUserValueForLaunch(_path));
+        Assert.Equal(144, FramerateCapFile.Read(_path));
+        Assert.False(File.GetAttributes(_path).HasFlag(FileAttributes.ReadOnly));
     }
 
     [Fact]

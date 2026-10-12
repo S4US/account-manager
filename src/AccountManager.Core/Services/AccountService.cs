@@ -65,6 +65,47 @@ public sealed class AccountService
 
     public string GetCookie(Account account) => _vault.Decrypt(account.EncryptedCookie);
 
+    /// <summary>The saved password, or "" when none was saved. Throws CryptographicException after a vault reset.</summary>
+    public string GetPassword(Account account) =>
+        string.IsNullOrEmpty(account.EncryptedPassword) ? "" : _vault.Decrypt(account.EncryptedPassword);
+
+    /// <summary>Encrypts and sets the password (not saved until <see cref="Save"/>). Null or empty removes it.</summary>
+    public void SetPassword(Account account, string? password) =>
+        account.EncryptedPassword = string.IsNullOrEmpty(password) ? "" : _vault.Encrypt(password);
+
+    /// <summary>Distinct group names in use, sorted.</summary>
+    public IReadOnlyList<string> Groups => All
+        .Select(a => a.Group.Trim())
+        .Where(g => g.Length > 0)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .Order(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    /// <summary>Moves accounts into a group ("" for none) with one reload at the end.</summary>
+    public void MoveToGroup(IEnumerable<Account> accounts, string group)
+    {
+        foreach (Account account in accounts)
+        {
+            account.Group = group.Trim();
+            _store.Save(account);
+        }
+
+        Load();
+    }
+
+    /// <summary>Saves a new list order, optionally moving one account into a group in the same step.</summary>
+    public void Reorder(IReadOnlyList<Account> ordered, Account? movedAccount, string? newGroup)
+    {
+        if (movedAccount is not null && newGroup is not null)
+        {
+            movedAccount.Group = newGroup.Trim();
+            _store.Save(movedAccount);
+        }
+
+        _store.SaveOrder(ordered);
+        Load();
+    }
+
     /// <summary>
     /// Validates the cookie with Roblox and stores the account it belongs to. If the account already exists its
     /// cookie is replaced (for example after signing in again). Returns the stored account and whether it was new.
@@ -197,12 +238,6 @@ public sealed class AccountService
     public void Delete(Account account)
     {
         _store.Delete(account.Id);
-        Load();
-    }
-
-    public void Reorder(IReadOnlyList<Account> ordered)
-    {
-        _store.SaveOrder(ordered);
         Load();
     }
 }

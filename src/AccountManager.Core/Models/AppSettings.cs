@@ -79,4 +79,17 @@ public sealed class AppSettings
     public bool StreamerMode { get; set; }
 
     public bool ConfirmKillAll { get; set; } = true;
+
+    /// <summary>Look for new versions on GitHub at startup and every 12 hours. Installing always asks first.</summary>
+    public bool CheckForUpdates { get; set; } = true;
+
+    // Launch bar, remembered between sessions. The server job id is deliberately not kept: servers close.
+    public string LastJoinInput { get; set; } = "";
+
+    public bool LastFollowMode { get; set; }
+
+    public string LastFollowInput { get; set; } = "";
+
+    /// <summary>Account groups the user collapsed in the list.</summary>
+    public List<string> CollapsedGroups { get; set; } = [];
 }

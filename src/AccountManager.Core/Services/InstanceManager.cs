@@ -248,7 +248,7 @@ public sealed class InstanceManager : IDisposable
     public async Task<int> TrimMemoryNowAsync()
     {
         int trimmed = 0;
-        foreach (InstanceInfo info in Active.Where(i => i.State == InstanceState.Running))
+        foreach (InstanceInfo info in Active.Where(i => i.State == InstanceState.Running && IsOptimized(i.AccountId)))
         {
             if (info.Process is { } process && ProcessTuner.TryTrimWorkingSet(process))
             {
@@ -356,11 +356,13 @@ public sealed class InstanceManager : IDisposable
 
         AppSettings settings = Settings;
         JoinTarget target = targetOverride ?? account.DefaultTarget;
-        int fps = account.FpsCap > 0 ? account.FpsCap : settings.DefaultFpsCap;
+        // An account with optimizations off starts like a normal client: no cap, no low-graphics flags.
+        int fps = !account.Optimize ? 0 : account.FpsCap > 0 ? account.FpsCap : settings.DefaultFpsCap;
+        bool preset = account.Optimize && account.UsePerformancePreset;
         try
         {
             string cookie = _accounts.GetCookie(account);
-            Process process = await _launcher.LaunchAsync(new LaunchRequest(account, cookie, target, fps, account.UsePerformancePreset), ct).ConfigureAwait(false);
+            Process process = await _launcher.LaunchAsync(new LaunchRequest(account, cookie, target, fps, preset), ct).ConfigureAwait(false);
             if (info.StopRequested)
             {
                 Kill(process);
@@ -439,6 +441,12 @@ public sealed class InstanceManager : IDisposable
     private void ApplyTuning(Account account, Process process)
     {
         AppSettings settings = Settings;
+        if (!account.Optimize)
+        {
+            // A fresh client already runs untouched.
+            return;
+        }
+
         if (settings.LowPriority)
         {
             ProcessTuner.TrySetPriority(process, ProcessPriorityClass.BelowNormal);
@@ -455,28 +463,33 @@ public sealed class InstanceManager : IDisposable
             ProcessTuner.TrySetAffinity(process, ProcessTuner.ComputeAffinityMask(slot, Environment.ProcessorCount));
         }
 
-        ApplyLimits(account, process, settings, onlyWhenSet: true);
+        ApplyLimits(account, process, settings, onlyWhenSet: true, optimized: true);
     }
 
-    /// <summary>Applies the memory and CPU caps, logging when Windows refuses one so a silent no-op can't happen.</summary>
-    private void ApplyLimits(Account? account, Process process, AppSettings settings, bool onlyWhenSet)
+    /// <summary>
+    /// Applies the memory and CPU caps, logging when Windows refuses one so a silent no-op can't happen. With
+    /// <paramref name="optimized"/> false both caps are removed.
+    /// </summary>
+    private void ApplyLimits(Account? account, Process process, AppSettings settings, bool onlyWhenSet, bool optimized)
     {
         string? label = account?.DisplayLabel;
 
         // CPU first: adding a process to a job object drops its hard working set cap, so the memory cap must be
         // (re)applied after the job assignment.
-        double cpuPercent = settings.CpuLimitCores > 0 ? settings.CpuLimitCores / Environment.ProcessorCount * 100 : 0;
+        double cpuPercent = optimized && settings.CpuLimitCores > 0 ? settings.CpuLimitCores / Environment.ProcessorCount * 100 : 0;
         if ((cpuPercent > 0 || !onlyWhenSet) && !ProcessTuner.TryLimitCpu(process, cpuPercent, out int cpuError))
         {
             _log.Warning($"Couldn't apply the CPU limit (Windows error {cpuError}).", label);
         }
 
-        int ramLimit = account?.RamLimitMb > 0 ? account.RamLimitMb : settings.GlobalRamLimitMb;
+        int ramLimit = !optimized ? 0 : account?.RamLimitMb > 0 ? account.RamLimitMb : settings.GlobalRamLimitMb;
         if ((ramLimit > 0 || !onlyWhenSet) && !ProcessTuner.TryLimitWorkingSet(process, ramLimit, out int ramError))
         {
             _log.Warning($"Couldn't apply the memory limit (Windows error {ramError}).", label);
         }
     }
+
+    private bool IsOptimized(long accountId) => _accounts.Find(accountId)?.Optimize ?? true;
 
     /// <summary>Re-applies the current tuning settings to every running client.</summary>
     public void ReapplyTuning()
@@ -487,12 +500,13 @@ public sealed class InstanceManager : IDisposable
         {
             Account? account = _accounts.Find(info.AccountId);
             Process process = info.Process!;
-            ProcessTuner.TrySetPriority(process, settings.LowPriority ? ProcessPriorityClass.BelowNormal : ProcessPriorityClass.Normal);
-            ProcessTuner.TrySetEfficiencyMode(process, settings.EfficiencyMode);
-            ProcessTuner.TrySetAffinity(process, settings.SpreadCpuAffinity ? ProcessTuner.ComputeAffinityMask(slot++, Environment.ProcessorCount) : 0);
+            bool optimized = account?.Optimize ?? true;
+            ProcessTuner.TrySetPriority(process, optimized && settings.LowPriority ? ProcessPriorityClass.BelowNormal : ProcessPriorityClass.Normal);
+            ProcessTuner.TrySetEfficiencyMode(process, optimized && settings.EfficiencyMode);
+            ProcessTuner.TrySetAffinity(process, optimized && settings.SpreadCpuAffinity ? ProcessTuner.ComputeAffinityMask(slot++, Environment.ProcessorCount) : 0);
 
             // Unlike at launch, a limit of 0 here removes a cap that was set earlier.
-            ApplyLimits(account, process, settings, onlyWhenSet: false);
+            ApplyLimits(account, process, settings, onlyWhenSet: false, optimized);
         }
 
         _lastMute = DateTime.MinValue;
@@ -757,7 +771,7 @@ public sealed class InstanceManager : IDisposable
             if (settings.PeriodicTrim && DateTime.UtcNow - _lastTrim > TimeSpan.FromMinutes(Math.Max(1, settings.TrimIntervalMinutes)))
             {
                 // Skip clients still loading: trimming during startup only slows them down.
-                foreach (InstanceInfo info in running.Where(i => i.StartedAt is { } s && DateTime.Now - s > TimeSpan.FromSeconds(60)))
+                foreach (InstanceInfo info in running.Where(i => i.StartedAt is { } s && DateTime.Now - s > TimeSpan.FromSeconds(60) && IsOptimized(i.AccountId)))
                 {
                     ProcessTuner.TryTrimWorkingSet(info.Process!);
                     await Task.Delay(25).ConfigureAwait(false);

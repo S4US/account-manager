@@ -20,6 +20,9 @@ public sealed class AppPaths
 
     public string Logs => Path.Combine(Root, "logs");
 
+    /// <summary>Downloaded app updates waiting to be installed.</summary>
+    public string Updates => Path.Combine(Root, "updates");
+
     /// <summary>Per-account WebView2 profiles used for logging in and opening the website.</summary>
     public string BrowserProfiles => Path.Combine(Root, "browser");
 

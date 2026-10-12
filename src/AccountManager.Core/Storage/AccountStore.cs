@@ -8,7 +8,7 @@ namespace AccountManager.Core.Storage;
 /// <summary>SQLite persistence for accounts. Cookies arrive here already encrypted.</summary>
 public sealed class AccountStore
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 3;
     private readonly string _connectionString;
 
     public AccountStore(string databasePath)
@@ -54,6 +54,22 @@ public sealed class AccountStore
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_Accounts_UserId ON Accounts(UserId);
                 """);
+            Execute(connection, "PRAGMA user_version = 1;");
+            version = 1;
+        }
+
+        if (version < 2)
+        {
+            // Existing accounts keep their optimizations on.
+            Execute(connection, "ALTER TABLE Accounts ADD COLUMN Optimize INTEGER NOT NULL DEFAULT 1;");
+            Execute(connection, "PRAGMA user_version = 2;");
+            version = 2;
+        }
+
+        if (version < 3)
+        {
+            Execute(connection, "ALTER TABLE Accounts ADD COLUMN GroupName TEXT NOT NULL DEFAULT '';");
+            Execute(connection, "ALTER TABLE Accounts ADD COLUMN EncryptedPassword TEXT NOT NULL DEFAULT '';");
             Execute(connection, $"PRAGMA user_version = {SchemaVersion};");
         }
     }
@@ -92,10 +108,10 @@ public sealed class AccountStore
         {
             command.CommandText = """
                 INSERT INTO Accounts (UserId, Username, DisplayName, Alias, Notes, Tags, IsFavorite, SortOrder, BrowserTrackerId,
-                    EncryptedCookie, AvatarUrl, DefaultTarget, FpsCap, UsePerformancePreset, AutoRestart, AntiAfk, RamLimitMb,
+                    EncryptedCookie, AvatarUrl, DefaultTarget, FpsCap, UsePerformancePreset, AutoRestart, AntiAfk, RamLimitMb, Optimize, GroupName, EncryptedPassword,
                     CreatedAt, LastLaunchedAt, CookieValidatedAt)
                 VALUES ($UserId, $Username, $DisplayName, $Alias, $Notes, $Tags, $IsFavorite, $SortOrder, $BrowserTrackerId,
-                    $EncryptedCookie, $AvatarUrl, $DefaultTarget, $FpsCap, $UsePerformancePreset, $AutoRestart, $AntiAfk, $RamLimitMb,
+                    $EncryptedCookie, $AvatarUrl, $DefaultTarget, $FpsCap, $UsePerformancePreset, $AutoRestart, $AntiAfk, $RamLimitMb, $Optimize, $GroupName, $EncryptedPassword,
                     $CreatedAt, $LastLaunchedAt, $CookieValidatedAt);
                 SELECT last_insert_rowid();
                 """;
@@ -106,7 +122,7 @@ public sealed class AccountStore
                 UPDATE Accounts SET UserId=$UserId, Username=$Username, DisplayName=$DisplayName, Alias=$Alias, Notes=$Notes,
                     Tags=$Tags, IsFavorite=$IsFavorite, SortOrder=$SortOrder, BrowserTrackerId=$BrowserTrackerId,
                     EncryptedCookie=$EncryptedCookie, AvatarUrl=$AvatarUrl, DefaultTarget=$DefaultTarget, FpsCap=$FpsCap,
-                    UsePerformancePreset=$UsePerformancePreset, AutoRestart=$AutoRestart, AntiAfk=$AntiAfk, RamLimitMb=$RamLimitMb,
+                    UsePerformancePreset=$UsePerformancePreset, AutoRestart=$AutoRestart, AntiAfk=$AntiAfk, RamLimitMb=$RamLimitMb, Optimize=$Optimize, GroupName=$GroupName, EncryptedPassword=$EncryptedPassword,
                     CreatedAt=$CreatedAt, LastLaunchedAt=$LastLaunchedAt, CookieValidatedAt=$CookieValidatedAt
                 WHERE Id=$Id;
                 SELECT $Id;
@@ -136,6 +152,9 @@ public sealed class AccountStore
         command.Parameters.AddWithValue("$AutoRestart", account.AutoRestart);
         command.Parameters.AddWithValue("$AntiAfk", account.AntiAfk);
         command.Parameters.AddWithValue("$RamLimitMb", account.RamLimitMb);
+        command.Parameters.AddWithValue("$Optimize", account.Optimize);
+        command.Parameters.AddWithValue("$GroupName", account.Group.Trim());
+        command.Parameters.AddWithValue("$EncryptedPassword", account.EncryptedPassword);
         command.Parameters.AddWithValue("$CreatedAt", FormatDate(account.CreatedAt));
         command.Parameters.AddWithValue("$LastLaunchedAt", (object?)FormatDate(account.LastLaunchedAt) ?? DBNull.Value);
         command.Parameters.AddWithValue("$CookieValidatedAt", (object?)FormatDate(account.CookieValidatedAt) ?? DBNull.Value);
@@ -215,6 +234,9 @@ public sealed class AccountStore
             AutoRestart = r.GetBoolean(r.GetOrdinal("AutoRestart")),
             AntiAfk = r.GetBoolean(r.GetOrdinal("AntiAfk")),
             RamLimitMb = r.GetInt32(r.GetOrdinal("RamLimitMb")),
+            Optimize = r.GetBoolean(r.GetOrdinal("Optimize")),
+            Group = r.GetString(r.GetOrdinal("GroupName")),
+            EncryptedPassword = r.GetString(r.GetOrdinal("EncryptedPassword")),
             CreatedAt = ParseDate(r.GetString(r.GetOrdinal("CreatedAt"))) ?? DateTime.UtcNow,
             LastLaunchedAt = r.IsDBNull(r.GetOrdinal("LastLaunchedAt")) ? null : ParseDate(r.GetString(r.GetOrdinal("LastLaunchedAt"))),
             CookieValidatedAt = r.IsDBNull(r.GetOrdinal("CookieValidatedAt")) ? null : ParseDate(r.GetString(r.GetOrdinal("CookieValidatedAt"))),
