@@ -175,10 +175,12 @@ public sealed class ClientSettingsWriterTests : IDisposable
     [Fact]
     public void Writes_overrides_and_cleans_up_when_empty()
     {
-        ClientSettingsWriter.ApplyToVersion(ClientSettingsWriter.BuildOverrides(null, 30), SettingsDir);
+        var preset = new JsonObject { ["FIntDebugForceMSAASamples"] = 0 };
+        ClientSettingsWriter.ApplyToVersion(ClientSettingsWriter.BuildOverrides(preset), SettingsDir);
 
         JsonObject written = Read();
-        Assert.Equal(30, (int)written[ClientSettingsWriter.TargetFpsFlag]!);
+        Assert.Equal(0, (int)written["FIntDebugForceMSAASamples"]!);
+        Assert.Null(written["DFIntTaskSchedulerTargetFps"]);
 
         ClientSettingsWriter.ApplyToVersion(new JsonObject(), SettingsDir);
         Assert.False(Directory.Exists(SettingsDir));
@@ -191,21 +193,20 @@ public sealed class ClientSettingsWriterTests : IDisposable
         File.WriteAllText(FlagFile, """{ "FFlagUserOwn": true, "DFIntTaskSchedulerTargetFps": 240 }""");
 
         var preset = new JsonObject { ["FFlagDisablePostFx"] = true };
-        ClientSettingsWriter.ApplyToVersion(ClientSettingsWriter.BuildOverrides(preset, 15), SettingsDir);
+        ClientSettingsWriter.ApplyToVersion(ClientSettingsWriter.BuildOverrides(preset), SettingsDir);
 
         JsonObject merged = Read();
         Assert.True((bool)merged["FFlagUserOwn"]!);
         Assert.True((bool)merged["FFlagDisablePostFx"]!);
-        Assert.Equal(15, (int)merged[ClientSettingsWriter.TargetFpsFlag]!);
 
         // A later launch without overrides gets exactly the user's flags back.
         ClientSettingsWriter.ApplyToVersion(new JsonObject(), SettingsDir);
         JsonObject restored = Read();
-        Assert.Equal(240, (int)restored[ClientSettingsWriter.TargetFpsFlag]!);
+        Assert.Equal(240, (int)restored["DFIntTaskSchedulerTargetFps"]!);
         Assert.Null(restored["FFlagDisablePostFx"]);
 
         ClientSettingsWriter.RestoreAll([new DirectoryInfo(_dir)]);
-        Assert.Equal(240, (int)Read()[ClientSettingsWriter.TargetFpsFlag]!);
+        Assert.Equal(240, (int)Read()["DFIntTaskSchedulerTargetFps"]!);
         Assert.False(File.Exists(Path.Combine(SettingsDir, ".account-manager")));
     }
 
@@ -265,6 +266,73 @@ public sealed class FramerateCapFileTests : IDisposable
     public void Missing_file_is_reported()
     {
         Assert.False(FramerateCapFile.Write(_path + ".missing", 30));
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(-5, 0)]
+    [InlineData(5, 5)]
+    [InlineData(45, 45)]
+    [InlineData(5000, 1000)]
+    public void Keeps_caps_in_range(int requested, int expected)
+    {
+        Assert.Equal(expected, FramerateCapFile.Normalize(requested));
+    }
+
+    [Fact]
+    public void Locks_the_file_while_capped_and_unlocks_on_restore()
+    {
+        File.WriteAllText(_path, "<roblox><Item><Properties>\n<int name=\"FramerateCap\">60</int>\n</Properties></Item></roblox>");
+
+        Assert.True(FramerateCapFile.ApplyForLaunch(_path, 5));
+        Assert.Equal(5, FramerateCapFile.Read(_path));
+        Assert.True(File.GetAttributes(_path).HasFlag(FileAttributes.ReadOnly));
+
+        // A second launch can change the cap of the locked file.
+        Assert.True(FramerateCapFile.ApplyForLaunch(_path, 10));
+        Assert.Equal(10, FramerateCapFile.Read(_path));
+
+        Assert.True(FramerateCapFile.RestoreUserCap(_path));
+        Assert.Equal(60, FramerateCapFile.Read(_path));
+        Assert.False(File.GetAttributes(_path).HasFlag(FileAttributes.ReadOnly));
+    }
+
+    [Fact]
+    public void Backs_up_the_users_value_once_and_restores_it()
+    {
+        File.WriteAllText(_path, "<roblox><Item><Properties>\n<int name=\"FramerateCap\">144</int>\n</Properties></Item></roblox>");
+
+        Assert.True(FramerateCapFile.ApplyForLaunch(_path, 30));
+        Assert.True(FramerateCapFile.ApplyForLaunch(_path, 60));
+        Assert.Equal(60, FramerateCapFile.Read(_path));
+
+        // Even if the session value ends up written back, the backup still holds the user's own.
+        FramerateCapFile.Write(_path, 30);
+        Assert.True(FramerateCapFile.RestoreUserCap(_path));
+        Assert.Equal(144, FramerateCapFile.Read(_path));
+        Assert.False(FramerateCapFile.RestoreUserCap(_path));
+    }
+
+    [Fact]
+    public void A_cap_roblox_cannot_produce_is_not_kept_as_the_users_own()
+    {
+        File.WriteAllText(_path, "<roblox><Item><Properties>\n<int name=\"FramerateCap\">10</int>\n</Properties></Item></roblox>");
+
+        FramerateCapFile.ApplyForLaunch(_path, 60);
+        FramerateCapFile.RestoreUserCap(_path);
+        Assert.Null(FramerateCapFile.Read(_path));
+    }
+
+    [Fact]
+    public void Restore_removes_a_cap_the_user_never_had()
+    {
+        File.WriteAllText(_path, "<roblox><Item><Properties>\n<bool name=\"X\">true</bool>\n</Properties></Item></roblox>");
+
+        FramerateCapFile.ApplyForLaunch(_path, 30);
+        Assert.Equal(30, FramerateCapFile.Read(_path));
+        FramerateCapFile.RestoreUserCap(_path);
+        Assert.Null(FramerateCapFile.Read(_path));
+        Assert.Contains("name=\"X\"", File.ReadAllText(_path));
     }
 
     public void Dispose()

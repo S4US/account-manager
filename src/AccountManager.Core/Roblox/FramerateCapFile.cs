@@ -5,10 +5,86 @@ namespace AccountManager.Core.Roblox;
 
 /// <summary>
 /// Reads and writes the in-game "Maximum frame rate" value stored in GlobalBasicSettings_13.xml.
-/// Roblox reads it at startup, so a launch can set it temporarily and restore the original afterwards.
+/// The cap is written before a launch and the file is made read-only so Roblox can't rewrite the value while
+/// managed clients run (it saves its settings while running and on exit). The user's own value is kept in a
+/// backup file next to it, and the file is unlocked and restored once no managed client is running.
 /// </summary>
 public static partial class FramerateCapFile
 {
+    public const int MinCap = 1;
+    public const int MaxCap = 1000;
+
+    /// <summary>The caps Roblox's own "Maximum frame rate" menu offers.</summary>
+    public static readonly IReadOnlyList<int> RobloxMenuCaps = [30, 60, 144, 240];
+
+    private const string BackupSuffix = ".account-manager-framerate";
+    private const string NoValue = "none";
+
+    /// <summary>Keeps a requested cap in range. 0 or less means no cap.</summary>
+    public static int Normalize(int cap) => cap <= 0 ? 0 : Math.Clamp(cap, MinCap, MaxCap);
+
+    /// <summary>
+    /// Sets the cap for the next launch and locks the file, first saving the user's own value if it isn't saved yet.
+    /// </summary>
+    public static bool ApplyForLaunch(string path, int cap)
+    {
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        string backup = path + BackupSuffix;
+        if (!File.Exists(backup))
+        {
+            // A value Roblox's menu can't produce (such as 10, left by earlier versions of this app) isn't the
+            // user's own choice; remembering none lets Roblox fall back to its default on restore.
+            int? original = Read(path);
+            bool isUsersOwn = original is int value && RobloxMenuCaps.Contains(value);
+            File.WriteAllText(backup, isUsersOwn ? original!.Value.ToString(CultureInfo.InvariantCulture) : NoValue);
+        }
+
+        if (!Write(path, Normalize(cap)))
+        {
+            return false;
+        }
+
+        File.SetAttributes(path, File.GetAttributes(path) | FileAttributes.ReadOnly);
+        return true;
+    }
+
+    /// <summary>Unlocks the file, puts the user's own value back and deletes the backup. Does nothing when no backup exists.</summary>
+    public static bool RestoreUserCap(string path)
+    {
+        string backup = path + BackupSuffix;
+        if (!File.Exists(backup) || !File.Exists(path))
+        {
+            return false;
+        }
+
+        string saved = File.ReadAllText(backup).Trim();
+        if (int.TryParse(saved, NumberStyles.Integer, CultureInfo.InvariantCulture, out int value))
+        {
+            Write(path, value);
+        }
+        else
+        {
+            Remove(path);
+        }
+
+        ClearReadOnly(path);
+        File.Delete(backup);
+        return true;
+    }
+
+    private static void Remove(string path)
+    {
+        string xml = ReadShared(path);
+        string updated = LineRegex().Replace(xml, "", 1);
+        if (updated != xml)
+        {
+            WriteAllowingReadOnly(path, updated);
+        }
+    }
     public static int? Read(string path)
     {
         if (!File.Exists(path))
@@ -46,19 +122,27 @@ public static partial class FramerateCapFile
             updated = xml.Insert(insertAt, "\t" + element + "\n\t\t");
         }
 
-        if (updated == xml)
+        if (updated != xml)
         {
-            return true;
+            WriteAllowingReadOnly(path, updated);
         }
 
+        return true;
+    }
+
+    private static void WriteAllowingReadOnly(string path, string contents)
+    {
+        ClearReadOnly(path);
+        File.WriteAllText(path, contents);
+    }
+
+    private static void ClearReadOnly(string path)
+    {
         FileAttributes attributes = File.GetAttributes(path);
         if (attributes.HasFlag(FileAttributes.ReadOnly))
         {
             File.SetAttributes(path, attributes & ~FileAttributes.ReadOnly);
         }
-
-        File.WriteAllText(path, updated);
-        return true;
     }
 
     private static string ReadShared(string path)
@@ -70,4 +154,7 @@ public static partial class FramerateCapFile
 
     [GeneratedRegex("<int\\s+name=\"FramerateCap\">(-?\\d+)</int>")]
     private static partial Regex CapRegex();
+
+    [GeneratedRegex("[ \\t]*<int\\s+name=\"FramerateCap\">-?\\d+</int>\\r?\\n?")]
+    private static partial Regex LineRegex();
 }

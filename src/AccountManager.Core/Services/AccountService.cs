@@ -160,6 +160,11 @@ public sealed class AccountService
         {
             return false;
         }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // Encrypted with a vault key that no longer exists, so it can't be sent at all.
+            return false;
+        }
     }
 
     public async Task RefreshAvatarsAsync(CancellationToken ct = default)

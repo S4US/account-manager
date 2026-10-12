@@ -10,25 +10,27 @@ namespace AccountManager.Core.Roblox;
 /// </summary>
 public sealed class ClientSettingsWriter
 {
-    public const string TargetFpsFlag = "DFIntTaskSchedulerTargetFps";
     private const string FileName = "ClientAppSettings.json";
     private const string UserBackupName = "ClientAppSettings.user.json";
     private const string MarkerName = ".account-manager";
     private static readonly JsonSerializerOptions Indented = new() { WriteIndented = true };
 
-    /// <summary>Default "performance preset": rendering-only flags that cut GPU/CPU use per client.</summary>
+    /// <summary>
+    /// Default "performance preset": rendering-only flags that cut GPU/CPU use per client. Roblox only accepts flags
+    /// on its published allowlist (devforum.roblox.com/t/3966569); every flag here is on it. The sky is drawn flat
+    /// gray and the lighting voxelizer is paused, which saves CPU in games with dynamic lighting.
+    /// </summary>
     public static readonly IReadOnlyDictionary<string, object> DefaultPerformancePreset = new Dictionary<string, object>
     {
         ["DFIntDebugFRMQualityLevelOverride"] = 1,
         ["FFlagDebugGraphicsPreferD3D11"] = true,
-        ["FFlagDisablePostFx"] = true,
-        ["FIntRenderShadowIntensity"] = 0,
+        ["FFlagDebugSkyGray"] = true,
+        ["DFFlagDebugPauseVoxelizer"] = true,
         ["FIntDebugForceMSAASamples"] = 0,
         ["DFFlagTextureQualityOverrideEnabled"] = true,
         ["DFIntTextureQualityOverride"] = 0,
         ["FIntFRMMinGrassDistance"] = 0,
         ["FIntFRMMaxGrassDistance"] = 0,
-        ["FIntRenderGrassDetailStrands"] = 0,
         ["DFIntCSGLevelOfDetailSwitchingDistance"] = 0,
         ["DFIntCSGLevelOfDetailSwitchingDistanceL12"] = 0,
         ["DFIntCSGLevelOfDetailSwitchingDistanceL23"] = 0,
@@ -64,17 +66,9 @@ public sealed class ClientSettingsWriter
         }
     }
 
-    /// <summary>Combines the preset and FPS cap into the overrides for one launch.</summary>
-    public static JsonObject BuildOverrides(JsonObject? preset, int fpsCap)
-    {
-        var overrides = preset is null ? new JsonObject() : (JsonObject)preset.DeepClone();
-        if (fpsCap > 0)
-        {
-            overrides[TargetFpsFlag] = fpsCap;
-        }
-
-        return overrides;
-    }
+    /// <summary>The overrides for one launch. Frame rate is not set here: Roblox no longer accepts that flag locally.</summary>
+    public static JsonObject BuildOverrides(JsonObject? preset) =>
+        preset is null ? new JsonObject() : (JsonObject)preset.DeepClone();
 
     /// <summary>Applies the overrides to every installed version folder. Returns the folders written.</summary>
     public int Apply(JsonObject overrides, IEnumerable<DirectoryInfo> versionDirectories)

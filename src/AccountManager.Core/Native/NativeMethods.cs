@@ -46,6 +46,10 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SetProcessWorkingSetSizeEx(nint process, nint minimum, nint maximum, uint flags);
 
+    public const uint QUOTA_LIMITS_HARDWS_MIN_DISABLE = 0x2;
+    public const uint QUOTA_LIMITS_HARDWS_MAX_ENABLE = 0x4;
+    public const uint QUOTA_LIMITS_HARDWS_MAX_DISABLE = 0x8;
+
     [StructLayout(LayoutKind.Sequential)]
     public struct MEMORYSTATUSEX
     {
@@ -94,44 +98,18 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SetProcessInformation(nint process, int infoClass, ref PROCESS_POWER_THROTTLING_STATE info, uint size);
 
-    // Job objects
-    public const int JobObjectExtendedLimitInformation = 9;
-    public const uint JOB_OBJECT_LIMIT_WORKINGSET = 0x1;
+    // Job objects (CPU rate control)
+    public const int JobObjectCpuRateControlInformation = 15;
+    public const uint JOB_OBJECT_CPU_RATE_CONTROL_ENABLE = 0x1;
+    public const uint JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP = 0x4;
 
     [StructLayout(LayoutKind.Sequential)]
-    public struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+    public struct JOBOBJECT_CPU_RATE_CONTROL_INFORMATION
     {
-        public long PerProcessUserTimeLimit;
-        public long PerJobUserTimeLimit;
-        public uint LimitFlags;
-        public nuint MinimumWorkingSetSize;
-        public nuint MaximumWorkingSetSize;
-        public uint ActiveProcessLimit;
-        public nuint Affinity;
-        public uint PriorityClass;
-        public uint SchedulingClass;
-    }
+        public uint ControlFlags;
 
-    [StructLayout(LayoutKind.Sequential)]
-    public struct IO_COUNTERS
-    {
-        public ulong ReadOperationCount;
-        public ulong WriteOperationCount;
-        public ulong OtherOperationCount;
-        public ulong ReadTransferCount;
-        public ulong WriteTransferCount;
-        public ulong OtherTransferCount;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-    {
-        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
-        public IO_COUNTERS IoInfo;
-        public nuint ProcessMemoryLimit;
-        public nuint JobMemoryLimit;
-        public nuint PeakProcessMemoryLimit;
-        public nuint PeakJobMemoryLimit;
+        /// <summary>Share of total CPU time in hundredths of a percent (1–10000).</summary>
+        public uint CpuRate;
     }
 
     [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
@@ -139,7 +117,7 @@ internal static partial class NativeMethods
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool SetInformationJobObject(nint job, int infoClass, ref JOBOBJECT_EXTENDED_LIMIT_INFORMATION info, uint length);
+    public static partial bool SetInformationJobObject(nint job, int infoClass, ref JOBOBJECT_CPU_RATE_CONTROL_INFORMATION info, uint length);
 
     [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

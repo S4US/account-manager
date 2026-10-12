@@ -383,6 +383,13 @@ public sealed class InstanceManager : IDisposable
         {
             SetState(info, InstanceState.Offline, "");
         }
+        catch (System.Security.Cryptography.CryptographicException)
+        {
+            // The saved sign-in was encrypted with a vault key that no longer exists (the vault was reset).
+            info.CookieRejected = true;
+            SetState(info, InstanceState.Failed, "Signed out. Sign in again.");
+            _log.Error("The saved sign-in can't be read. Sign in again.", account.DisplayLabel);
+        }
         catch (Exception ex)
         {
             SetState(info, InstanceState.Failed, ex.Message);
@@ -408,8 +415,14 @@ public sealed class InstanceManager : IDisposable
 
         ApplyTuning(account, process);
 
+        int pid = process.Id;
         process.EnableRaisingEvents = true;
-        process.Exited += (_, _) => OnProcessExited(account.Id, process);
+        process.Exited += (_, _) =>
+        {
+            ProcessTuner.Forget(pid);
+            OnProcessExited(account.Id, process);
+            _ = RestoreFramerateWhenIdleAsync();
+        };
 
         var claimed = _instances.Values.Where(i => i.Watcher?.AttachedFile is not null).Select(i => i.Watcher!.AttachedFile!).ToList();
         var watcher = new RobloxLogWatcher(RobloxInstallation.LogsDirectory, (info.StartedAt ?? DateTime.Now).ToUniversalTime(), account.BrowserTrackerId, claimed);
@@ -442,10 +455,26 @@ public sealed class InstanceManager : IDisposable
             ProcessTuner.TrySetAffinity(process, ProcessTuner.ComputeAffinityMask(slot, Environment.ProcessorCount));
         }
 
-        int limit = account.RamLimitMb > 0 ? account.RamLimitMb : settings.GlobalRamLimitMb;
-        if (limit > 0)
+        ApplyLimits(account, process, settings, onlyWhenSet: true);
+    }
+
+    /// <summary>Applies the memory and CPU caps, logging when Windows refuses one so a silent no-op can't happen.</summary>
+    private void ApplyLimits(Account? account, Process process, AppSettings settings, bool onlyWhenSet)
+    {
+        string? label = account?.DisplayLabel;
+
+        // CPU first: adding a process to a job object drops its hard working set cap, so the memory cap must be
+        // (re)applied after the job assignment.
+        double cpuPercent = settings.CpuLimitCores > 0 ? settings.CpuLimitCores / Environment.ProcessorCount * 100 : 0;
+        if ((cpuPercent > 0 || !onlyWhenSet) && !ProcessTuner.TryLimitCpu(process, cpuPercent, out int cpuError))
         {
-            ProcessTuner.TryLimitWorkingSet(process, limit);
+            _log.Warning($"Couldn't apply the CPU limit (Windows error {cpuError}).", label);
+        }
+
+        int ramLimit = account?.RamLimitMb > 0 ? account.RamLimitMb : settings.GlobalRamLimitMb;
+        if ((ramLimit > 0 || !onlyWhenSet) && !ProcessTuner.TryLimitWorkingSet(process, ramLimit, out int ramError))
+        {
+            _log.Warning($"Couldn't apply the memory limit (Windows error {ramError}).", label);
         }
     }
 
@@ -461,14 +490,24 @@ public sealed class InstanceManager : IDisposable
             ProcessTuner.TrySetPriority(process, settings.LowPriority ? ProcessPriorityClass.BelowNormal : ProcessPriorityClass.Normal);
             ProcessTuner.TrySetEfficiencyMode(process, settings.EfficiencyMode);
             ProcessTuner.TrySetAffinity(process, settings.SpreadCpuAffinity ? ProcessTuner.ComputeAffinityMask(slot++, Environment.ProcessorCount) : 0);
-            int limit = account?.RamLimitMb > 0 ? account.RamLimitMb : settings.GlobalRamLimitMb;
-            if (limit > 0)
-            {
-                ProcessTuner.TryLimitWorkingSet(process, limit);
-            }
+
+            // Unlike at launch, a limit of 0 here removes a cap that was set earlier.
+            ApplyLimits(account, process, settings, onlyWhenSet: false);
         }
 
         _lastMute = DateTime.MinValue;
+    }
+
+    /// <summary>Once the last managed client has closed, puts the user's own frame rate setting back.</summary>
+    private async Task RestoreFramerateWhenIdleAsync()
+    {
+        // Roblox saves its settings file while exiting; restore after that write.
+        await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+        bool anyPending = _instances.Values.Any(i => i.IsActive || i.State is InstanceState.Queued or InstanceState.Restarting);
+        if (!anyPending)
+        {
+            await _launcher.RestoreUserFramerateCapAsync().ConfigureAwait(false);
+        }
     }
 
     private async Task MinimizeLaterAsync(InstanceInfo info, int pid)

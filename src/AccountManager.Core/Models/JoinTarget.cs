@@ -109,7 +109,49 @@ public sealed partial record JoinTarget
             return ForPlace(placeId);
         }
 
+        // roblox://experiences/start?placeId=…&gameInstanceId=… and roblox.com/games/start?placeId=…
+        Match query = PlaceIdQueryRegex().Match(text);
+        if (query.Success && text.Contains("roblox", StringComparison.OrdinalIgnoreCase))
+        {
+            long placeId = long.Parse(query.Groups[1].Value, CultureInfo.InvariantCulture);
+            Match job = GameInstanceRegex().Match(text);
+            return job.Success ? ForServer(placeId, job.Groups[1].Value.ToLowerInvariant()) : ForPlace(placeId);
+        }
+
         return null;
+    }
+
+    /// <summary>Accepts a server job id with or without braces. Returns it in lowercase canonical form.</summary>
+    public static bool TryNormalizeJobId(string? input, out string jobId)
+    {
+        jobId = "";
+        if (string.IsNullOrWhiteSpace(input) || !Guid.TryParse(input.Trim(), out Guid guid))
+        {
+            return false;
+        }
+
+        jobId = guid.ToString("D");
+        return true;
+    }
+
+    /// <summary>
+    /// Combines a place (id, game link…) with a separately entered server job id. Without a job id this is
+    /// <see cref="Parse(string?)"/>. Returns null when the job id is malformed or the input names no public place.
+    /// </summary>
+    public static JoinTarget? Parse(string? input, string? jobId)
+    {
+        JoinTarget? target = Parse(input);
+        if (string.IsNullOrWhiteSpace(jobId))
+        {
+            return target;
+        }
+
+        if (!TryNormalizeJobId(jobId, out string job) || target is not { Kind: JoinKind.Place or JoinKind.Server, PlaceId: > 0 })
+        {
+            return null;
+        }
+
+        return ForServer(target.PlaceId, job);
     }
 
     [GeneratedRegex(@"^(\d+)[\s/]+([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$")]
@@ -126,4 +168,7 @@ public sealed partial record JoinTarget
 
     [GeneratedRegex(@"gameInstanceId=([0-9a-fA-F-]{36})", RegexOptions.IgnoreCase)]
     private static partial Regex GameInstanceRegex();
+
+    [GeneratedRegex(@"[?&]placeId=(\d+)", RegexOptions.IgnoreCase)]
+    private static partial Regex PlaceIdQueryRegex();
 }

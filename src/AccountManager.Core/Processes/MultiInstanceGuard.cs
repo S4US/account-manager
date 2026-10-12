@@ -8,94 +8,23 @@ namespace AccountManager.Core.Processes;
 /// <summary>
 /// Lets several Roblox clients run side by side.
 ///
-/// Roblox enforces a single client through named kernel objects ("ROBLOX_singletonMutex" / "ROBLOX_singletonEvent").
-/// The primary technique is to create and hold those objects in this process before any client starts, which is
-/// what the client checks for. As a fallback for clients that were already running when the manager started, the
-/// singleton handles inside those client processes can be closed, which releases the objects.
+/// Roblox enforces a single client through named kernel objects (ROBLOX_singletonMutex / ROBLOX_singletonEvent).
+/// A starting client waits on the mutex, and an older client that still holds it is asked to quit. Before each
+/// launch the handles to those objects inside the running clients are closed, so the objects disappear and the new
+/// client starts unopposed. Nothing holds the objects in between, so a starting client never waits on them.
+/// (Holding them in this process instead made every new client wait, and closing a handle a client is waiting on
+/// makes it shut itself down.)
 /// </summary>
-public sealed class MultiInstanceGuard : IDisposable
+public static class MultiInstanceGuard
 {
-    private static readonly string[] SingletonNames = ["ROBLOX_singletonMutex", "ROBLOX_singletonEvent"];
-    private readonly object _lock = new();
-    private Thread? _holder;
-    private ManualResetEventSlim? _stop;
-
-    public bool IsHolding
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return _holder is not null;
-            }
-        }
-    }
+    private const string SingletonPrefix = "ROBLOX_singleton";
 
     /// <summary>
-    /// Creates and holds the singleton objects. Safe to call repeatedly. Mutex ownership belongs to a thread, so the
-    /// objects live on a dedicated thread that stays alive until <see cref="Release"/>.
+    /// Closes the singleton handles held by running Roblox clients and returns how many were closed. Only clients
+    /// older than <paramref name="minimumAge"/> are touched, so none is caught in its own startup wait, and only
+    /// their mutex and event handles are opened.
     /// </summary>
-    public void Acquire()
-    {
-        lock (_lock)
-        {
-            if (_holder is not null)
-            {
-                return;
-            }
-
-            var stop = new ManualResetEventSlim(false);
-            var ready = new ManualResetEventSlim(false);
-            var thread = new Thread(() =>
-            {
-                using var mutex = new Mutex(initiallyOwned: true, SingletonNames[0], out _);
-                using var signal = new EventWaitHandle(false, EventResetMode.ManualReset, SingletonNames[1], out _);
-                ready.Set();
-                stop.Wait();
-                try
-                {
-                    mutex.ReleaseMutex();
-                }
-                catch (ApplicationException)
-                {
-                    // Not owned (another process created it first); nothing to release.
-                }
-            })
-            {
-                IsBackground = true,
-                Name = "Roblox singleton holder",
-            };
-            thread.Start();
-            ready.Wait(TimeSpan.FromSeconds(5));
-            _holder = thread;
-            _stop = stop;
-        }
-    }
-
-    public void Release()
-    {
-        lock (_lock)
-        {
-            if (_holder is null)
-            {
-                return;
-            }
-
-            _stop!.Set();
-            _holder.Join(TimeSpan.FromSeconds(2));
-            _stop.Dispose();
-            _holder = null;
-            _stop = null;
-        }
-    }
-
-    public void Dispose() => Release();
-
-    /// <summary>
-    /// Closes singleton handles held by running Roblox clients. Returns how many handles were closed.
-    /// Only touches RobloxPlayerBeta processes owned by the current user.
-    /// </summary>
-    public static int CloseSingletonHandlesInRunningClients(Action<string>? log = null)
+    public static int CloseSingletonHandlesInRunningClients(TimeSpan minimumAge, Action<string>? log = null)
     {
         Process[] clients = Process.GetProcessesByName(RobloxInstallation.PlayerProcessName);
         if (clients.Length == 0)
@@ -103,14 +32,31 @@ public sealed class MultiInstanceGuard : IDisposable
             return 0;
         }
 
-        var pids = clients.Select(p => p.Id).ToHashSet();
+        var pids = new HashSet<int>();
         foreach (Process p in clients)
         {
-            p.Dispose();
+            try
+            {
+                if (DateTime.Now - p.StartTime >= minimumAge)
+                {
+                    pids.Add(p.Id);
+                }
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+            }
+            finally
+            {
+                p.Dispose();
+            }
         }
 
+        if (pids.Count == 0)
+        {
+            return 0;
+        }
         int closed = 0;
-        foreach ((int pid, List<nint> handles) in HandleEnumerator.GetHandlesByProcess(pids))
+        foreach ((int pid, List<nint> handles) in HandleEnumerator.GetMutexAndEventHandles(pids))
         {
             nint process = NativeMethods.OpenProcess(NativeMethods.PROCESS_DUP_HANDLE, false, pid);
             if (process == 0)
@@ -161,7 +107,7 @@ public sealed class MultiInstanceGuard : IDisposable
             }
 
             string name = HandleEnumerator.QueryObjectString(local, HandleEnumerator.ObjectNameInformation);
-            return SingletonNames.Any(n => name.EndsWith(n, StringComparison.OrdinalIgnoreCase));
+            return name.Contains(SingletonPrefix, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
@@ -190,9 +136,54 @@ internal static class HandleEnumerator
         public uint Reserved;
     }
 
-    public static Dictionary<int, List<nint>> GetHandlesByProcess(IReadOnlySet<int> pids)
+    /// <summary>
+    /// Returns only the mutex and event handles of the given processes. Object type numbers differ between Windows
+    /// builds, so they are learned from a mutex and an event created here in this process.
+    /// </summary>
+    public static Dictionary<int, List<nint>> GetMutexAndEventHandles(IReadOnlySet<int> pids)
     {
+        using var probeMutex = new Mutex(false);
+        using var probeEvent = new EventWaitHandle(false, EventResetMode.ManualReset);
+        int self = Environment.ProcessId;
+        nint mutexHandle = probeMutex.SafeWaitHandle.DangerousGetHandle();
+        nint eventHandle = probeEvent.SafeWaitHandle.DangerousGetHandle();
+
+        var wanted = new HashSet<int>(pids) { self };
+        List<HandleEntryEx> entries = Snapshot(wanted);
+        var types = entries
+            .Where(e => (int)e.UniqueProcessId == self && (e.HandleValue == mutexHandle || e.HandleValue == eventHandle))
+            .Select(e => e.ObjectTypeIndex)
+            .ToHashSet();
+
         var result = new Dictionary<int, List<nint>>();
+        if (types.Count < 2)
+        {
+            // Couldn't identify both types; touch nothing rather than guess.
+            return result;
+        }
+
+        foreach (HandleEntryEx entry in entries)
+        {
+            int pid = (int)entry.UniqueProcessId;
+            if (pid == self || !pids.Contains(pid) || !types.Contains(entry.ObjectTypeIndex))
+            {
+                continue;
+            }
+
+            if (!result.TryGetValue(pid, out List<nint>? list))
+            {
+                result[pid] = list = [];
+            }
+
+            list.Add(entry.HandleValue);
+        }
+
+        return result;
+    }
+
+    private static List<HandleEntryEx> Snapshot(IReadOnlySet<int> pids)
+    {
+        var result = new List<HandleEntryEx>();
         int size = 1 << 20;
         nint buffer = 0;
         try
@@ -227,18 +218,10 @@ internal static class HandleEnumerator
             for (long i = 0; i < count; i++, entry += entrySize)
             {
                 HandleEntryEx info = Marshal.PtrToStructure<HandleEntryEx>(entry);
-                int pid = (int)info.UniqueProcessId;
-                if (!pids.Contains(pid))
+                if (pids.Contains((int)info.UniqueProcessId))
                 {
-                    continue;
+                    result.Add(info);
                 }
-
-                if (!result.TryGetValue(pid, out List<nint>? list))
-                {
-                    result[pid] = list = [];
-                }
-
-                list.Add(info.HandleValue);
             }
 
             return result;

@@ -29,7 +29,6 @@ public sealed class RobloxLauncher
     private static readonly TimeSpan WindowTimeout = TimeSpan.FromSeconds(30);
 
     private readonly RobloxApi _api;
-    private readonly MultiInstanceGuard _guard;
     private readonly ClientSettingsWriter _flags = new();
     private readonly Func<AppSettings> _settings;
     private readonly Func<JsonObject?> _preset;
@@ -38,10 +37,9 @@ public sealed class RobloxLauncher
     private readonly HttpClient _versionHttp = new() { Timeout = TimeSpan.FromSeconds(8) };
     private (string? Version, DateTime At) _publishedVersion;
 
-    public RobloxLauncher(RobloxApi api, MultiInstanceGuard guard, Func<AppSettings> settings, Func<JsonObject?> preset, ActivityLog log)
+    public RobloxLauncher(RobloxApi api, Func<AppSettings> settings, Func<JsonObject?> preset, ActivityLog log)
     {
         _api = api;
-        _guard = guard;
         _settings = settings;
         _preset = preset;
         _log = log;
@@ -87,55 +85,74 @@ public sealed class RobloxLauncher
             throw new LaunchException("Couldn't reach Roblox. Check your internet connection.", ex);
         }
 
-        // Per-launch fast flags and frame rate.
-        JsonObject overrides = ClientSettingsWriter.BuildOverrides(request.UsePerformancePreset ? _preset() : null, request.FpsCap);
+        // Per-launch fast flags. Roblox ignores frame rate flags now, so the cap goes through its in-game setting.
+        JsonObject overrides = ClientSettingsWriter.BuildOverrides(request.UsePerformancePreset ? _preset() : null);
         _flags.Apply(overrides, RobloxInstallation.GetPlayerVersionDirectories());
+        ApplyFramerateCap(request.FpsCap);
 
-        string basicSettings = RobloxInstallation.GlobalBasicSettingsPath;
-        int? originalCap = null;
-        if (request.FpsCap > 0)
+        if (settings.MultiInstance)
         {
-            originalCap = FramerateCapFile.Read(basicSettings);
-            FramerateCapFile.Write(basicSettings, request.FpsCap);
+            // Clients a few seconds old are past their startup wait on the singleton mutex.
+            int released = MultiInstanceGuard.CloseSingletonHandlesInRunningClients(TimeSpan.FromSeconds(5));
+            if (released > 0)
+            {
+                _log.Info($"Released {released} Roblox single-instance lock{(released == 1 ? "" : "s")} so another client can start.", account.DisplayLabel);
+            }
         }
 
+        string uri = LaunchUriBuilder.Build(ticket, target, account.BrowserTrackerId, DateTimeOffset.UtcNow);
+        var known = Process.GetProcessesByName(RobloxInstallation.PlayerProcessName).Select(p => p.Id).ToHashSet();
+
+        Process started = Process.Start(new ProcessStartInfo(executable, uri)
+        {
+            UseShellExecute = false,
+            WorkingDirectory = Path.GetDirectoryName(executable)!,
+        }) ?? throw new LaunchException("Windows refused to start the Roblox client.");
+
+        Process client = await CaptureClientAsync(started, known, account.BrowserTrackerId, ct).ConfigureAwait(false);
+        await WaitForWindowAsync(client, ct).ConfigureAwait(false);
+        return client;
+    }
+
+    /// <summary>
+    /// Puts the user's own "Maximum frame rate" back. Call once no managed client is running: Roblox writes the
+    /// value it started with back to the file when it exits.
+    /// </summary>
+    public async Task RestoreUserFramerateCapAsync()
+    {
+        await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            if (settings.MultiInstance)
-            {
-                _guard.Acquire();
-                if (settings.MultiInstanceHandleFallback)
-                {
-                    MultiInstanceGuard.CloseSingletonHandlesInRunningClients();
-                }
-            }
-
-            string uri = LaunchUriBuilder.Build(ticket, target, account.BrowserTrackerId, DateTimeOffset.UtcNow);
-            var known = Process.GetProcessesByName(RobloxInstallation.PlayerProcessName).Select(p => p.Id).ToHashSet();
-
-            Process started = Process.Start(new ProcessStartInfo(executable, uri)
-            {
-                UseShellExecute = false,
-                WorkingDirectory = Path.GetDirectoryName(executable)!,
-            }) ?? throw new LaunchException("Windows refused to start the Roblox client.");
-
-            Process client = await CaptureClientAsync(started, known, account.BrowserTrackerId, ct).ConfigureAwait(false);
-            await WaitForWindowAsync(client, ct).ConfigureAwait(false);
-
-            if (settings.MultiInstance && settings.MultiInstanceHandleFallback)
-            {
-                // The new client creates its singleton objects during startup; release them so the next launch works.
-                MultiInstanceGuard.CloseSingletonHandlesInRunningClients();
-            }
-
-            return client;
+            FramerateCapFile.RestoreUserCap(RobloxInstallation.GlobalBasicSettingsPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Warning("Couldn't restore your Roblox frame rate setting: " + ex.Message);
         }
         finally
         {
-            if (originalCap is not null)
+            _gate.Release();
+        }
+    }
+
+    private void ApplyFramerateCap(int requested)
+    {
+        string path = RobloxInstallation.GlobalBasicSettingsPath;
+        int cap = FramerateCapFile.Normalize(requested);
+        try
+        {
+            if (cap > 0)
             {
-                FramerateCapFile.Write(basicSettings, originalCap.Value);
+                FramerateCapFile.ApplyForLaunch(path, cap);
             }
+            else
+            {
+                FramerateCapFile.RestoreUserCap(path);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Warning("Couldn't set the frame rate cap: " + ex.Message);
         }
     }
 

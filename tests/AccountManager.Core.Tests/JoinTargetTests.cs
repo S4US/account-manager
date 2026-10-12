@@ -44,6 +44,8 @@ public class JoinTargetTests
     [InlineData("1818 0b7c4f5e-9d2a-4c1b-8e3f-123456789abc")]
     [InlineData("1818/0B7C4F5E-9D2A-4C1B-8E3F-123456789ABC")]
     [InlineData("https://www.roblox.com/games/1818/Classic?gameInstanceId=0b7c4f5e-9d2a-4c1b-8e3f-123456789abc")]
+    [InlineData("roblox://experiences/start?placeId=1818&gameInstanceId=0b7c4f5e-9d2a-4c1b-8e3f-123456789abc")]
+    [InlineData("https://www.roblox.com/games/start?placeId=1818&gameInstanceId=0b7c4f5e-9d2a-4c1b-8e3f-123456789abc")]
     public void Parses_specific_server(string input)
     {
         JoinTarget? target = JoinTarget.Parse(input);
@@ -59,10 +61,40 @@ public class JoinTargetTests
     [InlineData("   ")]
     [InlineData("not a game")]
     [InlineData("https://example.com/games/123")]
+    [InlineData("https://example.com/start?placeId=123")]
     [InlineData("-5")]
     public void Rejects_unrecognised_input(string input)
     {
         Assert.Null(JoinTarget.Parse(input));
+    }
+
+    [Theory]
+    [InlineData("1818")]
+    [InlineData("https://www.roblox.com/games/1818/Classic")]
+    [InlineData("1818 11111111-2222-3333-4444-555555555555")]
+    public void Combines_a_place_with_a_separate_job_id(string place)
+    {
+        JoinTarget? target = JoinTarget.Parse(place, " {0B7C4F5E-9D2A-4C1B-8E3F-123456789ABC} ");
+
+        Assert.NotNull(target);
+        Assert.Equal(JoinKind.Server, target.Kind);
+        Assert.Equal(1818, target.PlaceId);
+        Assert.Equal("0b7c4f5e-9d2a-4c1b-8e3f-123456789abc", target.JobId);
+    }
+
+    [Theory]
+    [InlineData("", "0b7c4f5e-9d2a-4c1b-8e3f-123456789abc")]
+    [InlineData("1818", "not-a-job-id")]
+    [InlineData("https://www.roblox.com/share?code=abc&type=Server", "0b7c4f5e-9d2a-4c1b-8e3f-123456789abc")]
+    public void Rejects_a_job_id_without_a_public_place(string place, string job)
+    {
+        Assert.Null(JoinTarget.Parse(place, job));
+    }
+
+    [Fact]
+    public void Without_a_job_id_parses_as_usual()
+    {
+        Assert.Equal(JoinTarget.ForPlace(1818), JoinTarget.Parse("1818", "  "));
     }
 
     [Fact]

@@ -6,13 +6,13 @@ public sealed class AppSettings
     // Launching
     public bool MultiInstance { get; set; } = true;
 
-    /// <summary>Also close Roblox's singleton handles inside running clients if holding them is not enough.</summary>
-    public bool MultiInstanceHandleFallback { get; set; } = true;
-
     /// <summary>Seconds to wait between clients when launching several accounts.</summary>
     public int LaunchStaggerSeconds { get; set; } = 12;
 
-    /// <summary>Global FPS cap applied to accounts without their own. 0 = leave Roblox's setting alone.</summary>
+    /// <summary>
+    /// Global FPS cap applied to accounts without their own. 0 = leave Roblox's setting alone. Written to Roblox's
+    /// in-game "Maximum frame rate" value, which also takes values its menu doesn't offer (such as 5).
+    /// </summary>
     public int DefaultFpsCap { get; set; }
 
     public bool MinimizeAfterLaunch { get; set; }
@@ -31,6 +31,12 @@ public sealed class AppSettings
 
     /// <summary>Working set cap for every client in MB. 0 = disabled. Per-account limits take precedence.</summary>
     public int GlobalRamLimitMb { get; set; }
+
+    /// <summary>
+    /// Hard cap on each client's CPU time, in logical cores (0.5 = half of one core). 0 = disabled. Lowers the frame
+    /// rate further than the FPS cap can, since Roblox's own cap stops at 30.
+    /// </summary>
+    public double CpuLimitCores { get; set; }
 
     public bool AutoMute { get; set; } = true;
 
