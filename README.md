@@ -2,7 +2,7 @@
 
 A Windows app for running several Roblox accounts at once without your PC grinding to a halt.
 
-![The Performance page](docs/screenshot.png)
+![The Accounts page with accounts in groups](docs/screenshot.png)
 
 ## What it does
 
