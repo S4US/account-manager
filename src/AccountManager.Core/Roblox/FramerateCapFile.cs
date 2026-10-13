@@ -166,7 +166,7 @@ public static partial class FramerateCapFile
         }
     }
 
-    private static string ReadShared(string path)
+    internal static string ReadShared(string path)
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var reader = new StreamReader(stream);

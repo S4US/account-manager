@@ -6,7 +6,10 @@ using AccountManager.Core.Roblox;
 
 namespace AccountManager.Core.Services;
 
-public sealed record LaunchRequest(Account Account, string Cookie, JoinTarget Target, int FpsCap, bool UsePerformancePreset);
+/// <param name="NormalWindow">
+/// Open as a normal window instead of the way Roblox last closed (often maximized or full screen).
+/// </param>
+public sealed record LaunchRequest(Account Account, string Cookie, JoinTarget Target, int FpsCap, bool UsePerformancePreset, bool NormalWindow = false);
 
 public sealed class LaunchException : Exception
 {
@@ -88,6 +91,7 @@ public sealed class RobloxLauncher
         // Per-launch fast flags. Roblox ignores frame rate flags now, so the cap goes through its in-game setting.
         JsonObject overrides = ClientSettingsWriter.BuildOverrides(request.UsePerformancePreset ? _preset() : null);
         _flags.Apply(overrides, RobloxInstallation.GetPlayerVersionDirectories());
+        ApplyWindowPlacement(request.NormalWindow);
         ApplyFramerateCap(request.FpsCap);
 
         if (settings.MultiInstance)
@@ -131,23 +135,52 @@ public sealed class RobloxLauncher
     }
 
     /// <summary>
-    /// Puts the user's own "Maximum frame rate" back. Call once no managed client is running: Roblox writes the
-    /// value it started with back to the file when it exits.
+    /// Puts the user's own "Maximum frame rate" and window placement back. Call once no managed client is running:
+    /// Roblox writes its settings back to the file when it exits.
     /// </summary>
-    public async Task RestoreUserFramerateCapAsync()
+    public async Task RestoreUserSettingsAsync()
     {
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            FramerateCapFile.RestoreUserCap(RobloxInstallation.GlobalBasicSettingsPath);
+            RestoreUserSettings();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            _log.Warning("Couldn't restore your Roblox frame rate setting: " + ex.Message);
+            _log.Warning("Couldn't restore your Roblox settings: " + ex.Message);
         }
         finally
         {
             _gate.Release();
+        }
+    }
+
+    /// <summary>The placement first: restoring the cap unlocks the file.</summary>
+    public static void RestoreUserSettings()
+    {
+        string path = RobloxInstallation.GlobalBasicSettingsPath;
+        WindowPlacementFile.RestoreUserPlacement(path);
+        FramerateCapFile.RestoreUserCap(path);
+    }
+
+    private void ApplyWindowPlacement(bool normalWindow)
+    {
+        string path = RobloxInstallation.GlobalBasicSettingsPath;
+        try
+        {
+            if (normalWindow)
+            {
+                WindowPlacementFile.ApplyForLaunch(path, WindowPlacementFile.DefaultWidth, WindowPlacementFile.DefaultHeight);
+            }
+            else
+            {
+                // Other managed clients may still run; the full restore waits until they've all closed.
+                WindowPlacementFile.ApplyUserValueForLaunch(path);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _log.Warning("Couldn't set how Roblox opens its window: " + ex.Message);
         }
     }
 

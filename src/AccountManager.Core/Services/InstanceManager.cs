@@ -444,7 +444,7 @@ public sealed class InstanceManager : IDisposable
         try
         {
             string cookie = _accounts.GetCookie(account);
-            Process process = await _launcher.LaunchAsync(new LaunchRequest(account, cookie, target, fps, preset), ct).ConfigureAwait(false);
+            Process process = await _launcher.LaunchAsync(new LaunchRequest(account, cookie, target, fps, preset, NormalWindow: account.Optimize), ct).ConfigureAwait(false);
             if (info.StopRequested)
             {
                 Kill(process);
@@ -629,7 +629,7 @@ public sealed class InstanceManager : IDisposable
         bool anyPending = _instances.Values.Any(i => i.IsActive || i.State is InstanceState.Queued or InstanceState.Restarting);
         if (!anyPending)
         {
-            await _launcher.RestoreUserFramerateCapAsync().ConfigureAwait(false);
+            await _launcher.RestoreUserSettingsAsync().ConfigureAwait(false);
         }
     }
 

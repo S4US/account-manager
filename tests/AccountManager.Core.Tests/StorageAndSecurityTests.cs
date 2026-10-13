@@ -453,6 +453,30 @@ public sealed class FramerateCapFileTests : IDisposable
     }
 
     [Fact]
+    public void Window_placement_and_cap_share_the_file_and_the_lock()
+    {
+        File.WriteAllText(_path, WindowPlacementFileTests.MaximizedFile);
+
+        // The launch order: placement, then the cap, which locks the file.
+        Assert.True(WindowPlacementFile.ApplyForLaunch(_path, 816, 638));
+        Assert.True(FramerateCapFile.ApplyForLaunch(_path, 5));
+        Assert.Equal(new WindowPlacement(false, false, (816, 638)), WindowPlacementFile.Read(_path));
+        Assert.Equal(5, FramerateCapFile.Read(_path));
+
+        // The next launch rewrites the placement without unlocking the file.
+        Assert.True(WindowPlacementFile.ApplyForLaunch(_path, 816, 638));
+        Assert.True(File.GetAttributes(_path).HasFlag(FileAttributes.ReadOnly));
+
+        // Restoring the placement first keeps it locked until the cap restore unlocks it.
+        Assert.True(WindowPlacementFile.RestoreUserPlacement(_path));
+        Assert.True(File.GetAttributes(_path).HasFlag(FileAttributes.ReadOnly));
+        Assert.True(FramerateCapFile.RestoreUserCap(_path));
+        Assert.Equal(new WindowPlacement(false, true, (2576, 1408)), WindowPlacementFile.Read(_path));
+        Assert.Equal(60, FramerateCapFile.Read(_path));
+        Assert.False(File.GetAttributes(_path).HasFlag(FileAttributes.ReadOnly));
+    }
+
+    [Fact]
     public void Restore_removes_a_cap_the_user_never_had()
     {
         File.WriteAllText(_path, "<roblox><Item><Properties>\n<bool name=\"X\">true</bool>\n</Properties></Item></roblox>");
@@ -462,6 +486,103 @@ public sealed class FramerateCapFileTests : IDisposable
         FramerateCapFile.RestoreUserCap(_path);
         Assert.Null(FramerateCapFile.Read(_path));
         Assert.Contains("name=\"X\"", File.ReadAllText(_path));
+    }
+
+    public void Dispose()
+    {
+        if (File.Exists(_path))
+        {
+            File.SetAttributes(_path, FileAttributes.Normal);
+        }
+
+        Directory.Delete(Path.GetDirectoryName(_path)!, recursive: true);
+    }
+}
+
+public sealed class WindowPlacementFileTests : IDisposable
+{
+    // The shape Roblox writes after a client closed maximized on a 2560x1440 screen.
+    internal const string MaximizedFile =
+        "<roblox><Item class=\"UserGameSettings\"><Properties>\n" +
+        "\t\t\t<bool name=\"Fullscreen\">false</bool>\n" +
+        "\t\t\t<int name=\"FramerateCap\">60</int>\n" +
+        "\t\t\t<bool name=\"StartMaximized\">true</bool>\n" +
+        "\t\t\t<Vector2 name=\"StartScreenPosition\">\n\t\t\t\t<X>-8</X>\n\t\t\t\t<Y>-8</Y>\n\t\t\t</Vector2>\n" +
+        "\t\t\t<Vector2 name=\"StartScreenSize\">\n\t\t\t\t<X>2576</X>\n\t\t\t\t<Y>1408</Y>\n\t\t\t</Vector2>\n" +
+        "\t\t</Properties></Item></roblox>";
+
+    private readonly string _path = Path.Combine(Directory.CreateTempSubdirectory("am-gbs").FullName, "GlobalBasicSettings_13.xml");
+
+    [Fact]
+    public void Reads_the_placement_roblox_saved()
+    {
+        File.WriteAllText(_path, MaximizedFile);
+
+        Assert.Equal(new WindowPlacement(false, true, (2576, 1408)), WindowPlacementFile.Read(_path));
+    }
+
+    [Fact]
+    public void A_launch_opens_as_a_normal_window_and_the_users_placement_comes_back()
+    {
+        File.WriteAllText(_path, MaximizedFile);
+
+        Assert.True(WindowPlacementFile.ApplyForLaunch(_path, 816, 638));
+        Assert.Equal(new WindowPlacement(false, false, (816, 638)), WindowPlacementFile.Read(_path));
+        Assert.Contains("<X>-8</X>", File.ReadAllText(_path)); // position untouched
+
+        // A client closing maximized writes that back; the backup still has the user's own placement.
+        File.WriteAllText(_path, MaximizedFile.Replace(">false</bool>", ">true</bool>"));
+        Assert.True(WindowPlacementFile.ApplyForLaunch(_path, 816, 638));
+        Assert.Equal(new WindowPlacement(false, false, (816, 638)), WindowPlacementFile.Read(_path));
+
+        Assert.True(WindowPlacementFile.RestoreUserPlacement(_path));
+        Assert.Equal(new WindowPlacement(false, true, (2576, 1408)), WindowPlacementFile.Read(_path));
+        Assert.False(WindowPlacementFile.RestoreUserPlacement(_path));
+    }
+
+    [Fact]
+    public void Turns_full_screen_off()
+    {
+        File.WriteAllText(_path, MaximizedFile.Replace("\"Fullscreen\">false", "\"Fullscreen\">true"));
+
+        WindowPlacementFile.ApplyForLaunch(_path, 816, 638);
+        Assert.Equal(new WindowPlacement(false, false, (816, 638)), WindowPlacementFile.Read(_path));
+
+        WindowPlacementFile.RestoreUserPlacement(_path);
+        Assert.Equal(new WindowPlacement(true, true, (2576, 1408)), WindowPlacementFile.Read(_path));
+    }
+
+    [Fact]
+    public void Inserts_values_the_file_lacks()
+    {
+        File.WriteAllText(_path, "<roblox><Item><Properties>\n<bool name=\"X\">true</bool>\n</Properties></Item></roblox>");
+
+        Assert.Equal(new WindowPlacement(null, null, null), WindowPlacementFile.Read(_path));
+        Assert.True(WindowPlacementFile.ApplyForLaunch(_path, 816, 638));
+        Assert.Equal(new WindowPlacement(false, false, (816, 638)), WindowPlacementFile.Read(_path));
+        Assert.Contains("name=\"X\"", File.ReadAllText(_path));
+    }
+
+    [Fact]
+    public void A_launch_the_users_way_mid_session_keeps_the_backup()
+    {
+        File.WriteAllText(_path, MaximizedFile);
+
+        WindowPlacementFile.ApplyForLaunch(_path, 816, 638);
+        Assert.True(WindowPlacementFile.ApplyUserValueForLaunch(_path));
+        Assert.Equal(new WindowPlacement(false, true, (2576, 1408)), WindowPlacementFile.Read(_path));
+        Assert.True(WindowPlacementFile.RestoreUserPlacement(_path));
+    }
+
+    [Fact]
+    public void Without_a_session_nothing_changes()
+    {
+        File.WriteAllText(_path, MaximizedFile);
+
+        Assert.False(WindowPlacementFile.ApplyUserValueForLaunch(_path));
+        Assert.False(WindowPlacementFile.RestoreUserPlacement(_path));
+        Assert.Equal(MaximizedFile, File.ReadAllText(_path));
+        Assert.False(WindowPlacementFile.ApplyForLaunch(_path + ".missing", 816, 638));
     }
 
     public void Dispose()

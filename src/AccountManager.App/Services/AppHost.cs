@@ -95,14 +95,14 @@ public sealed class AppHost : IDisposable
 
         await Task.Run(() =>
         {
-            // A cap left over from a previous session (the app closed while clients ran) is undone here.
+            // A cap or window placement left over from a previous session (the app closed while clients ran) is undone here.
             try
             {
-                RestoreFramerateIfNoClients();
+                RestoreRobloxSettingsIfNoClients();
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                Log.Warning("Couldn't restore your Roblox frame rate setting: " + ex.Message);
+                Log.Warning("Couldn't restore your Roblox settings: " + ex.Message);
             }
 
             Instances.AdoptRunningClients();
@@ -166,7 +166,7 @@ public sealed class AppHost : IDisposable
         {
             // Clients read the flag file at startup only, so restoring the user's own flags is safe now.
             ClientSettingsWriter.RestoreAll(RobloxInstallation.GetPlayerVersionDirectories());
-            RestoreFramerateIfNoClients();
+            RestoreRobloxSettingsIfNoClients();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -174,10 +174,10 @@ public sealed class AppHost : IDisposable
     }
 
     /// <summary>
-    /// Roblox writes its frame rate setting back when a client exits, so the user's own value can only be put back
-    /// while no client is running.
+    /// Roblox writes its frame rate and window settings back when a client exits, so the user's own values can only
+    /// be put back while no client is running.
     /// </summary>
-    private static void RestoreFramerateIfNoClients()
+    private static void RestoreRobloxSettingsIfNoClients()
     {
         System.Diagnostics.Process[] clients = System.Diagnostics.Process.GetProcessesByName(RobloxInstallation.PlayerProcessName);
         bool anyRunning = clients.Length > 0;
@@ -188,7 +188,7 @@ public sealed class AppHost : IDisposable
 
         if (!anyRunning)
         {
-            FramerateCapFile.RestoreUserCap(RobloxInstallation.GlobalBasicSettingsPath);
+            RobloxLauncher.RestoreUserSettings();
         }
     }
 
