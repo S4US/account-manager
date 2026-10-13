@@ -11,6 +11,14 @@ public readonly record struct MemorySnapshot(ulong TotalBytes, ulong AvailableBy
     public double UsedGb => (TotalBytes - AvailableBytes) / 1073741824.0;
 
     public long AvailableMb => (long)(AvailableBytes / 1048576);
+
+    /// <summary>Room left under the commit limit (RAM plus page file). At zero, no program can allocate memory.</summary>
+    public long CommitAvailableMb => (long)(CommitAvailableBytes / 1048576);
+
+    /// <summary>The commit limit: RAM plus page file. Task Manager shows it as the second "Committed" figure.</summary>
+    public double CommitLimitGb => CommitTotalBytes / 1073741824.0;
+
+    public double CommitUsedGb => (CommitTotalBytes - CommitAvailableBytes) / 1073741824.0;
 }
 
 /// <summary>System-wide memory status and maintenance.</summary>

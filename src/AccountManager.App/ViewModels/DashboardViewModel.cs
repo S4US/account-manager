@@ -58,6 +58,15 @@ public sealed partial class DashboardViewModel : ObservableObject
     private string _memoryDetail = "";
 
     [ObservableProperty]
+    private double _commitPercent;
+
+    [ObservableProperty]
+    private string _commitText = "";
+
+    [ObservableProperty]
+    private StatusTone _commitTone;
+
+    [ObservableProperty]
     private string _clientsMemoryText = "0 GB";
 
     [ObservableProperty]
@@ -89,17 +98,37 @@ public sealed partial class DashboardViewModel : ObservableObject
         CpuText = $"{status.CpuPercent:0}%";
         MemoryPercent = status.Memory.LoadPercent;
         MemoryText = $"{status.Memory.UsedGb:0.0} / {status.Memory.TotalGb:0.0} GB";
-        MemoryDetail = $"{status.Memory.AvailableMb:N0} MB available";
+        MemoryDetail = $"RAM · {status.Memory.AvailableMb:N0} MB free";
         ClientsMemoryText = $"{status.ClientsMemoryMb / 1024:0.0} GB";
         ClientsMemoryDetail = status.RunningClients > 0
             ? $"{status.ClientsMemoryMb / status.RunningClients:0} MB per client · {status.ClientsCpuPercent:0}% CPU"
             : "No clients running";
 
-        // Rough headroom estimate: how many more clients fit in free RAM at the current average (or 800 MB).
+        // Commit is what actually runs out with many clients: RAM caps and trimming move memory to the page file
+        // but never lower it, so free RAM says little about how many more clients fit.
+        if (status.Memory.CommitTotalBytes > 0)
+        {
+            CommitPercent = status.Memory.CommitUsedGb / status.Memory.CommitLimitGb * 100;
+            CommitText = $"Committed · {status.Memory.CommitUsedGb:0.0} / {status.Memory.CommitLimitGb:0.0} GB";
+            CommitTone = status.Memory.CommitAvailableMb < SystemStatus.CommitReserveMb ? StatusTone.Critical
+                : status.CommitLeftMb < status.CommitPerClientMb + SystemStatus.CommitReserveMb ? StatusTone.Caution
+                : StatusTone.Neutral;
+        }
+
+        // Rough headroom estimate: how many more clients fit in free RAM at the current average (or 800 MB), and
+        // under the commit limit, which a memory cap doesn't help with. Whichever runs out first.
         double perClient = status.RunningClients > 0 ? Math.Max(300, status.ClientsMemoryMb / status.RunningClients) : 800;
         long reserve = Math.Max(1024, _host.Settings.Current.LowMemoryThrottleMb);
         long headroom = Math.Max(0, (long)((status.Memory.AvailableMb - reserve) / perClient));
-        CapacityText = $"Room for about {headroom} more client{(headroom == 1 ? "" : "s")}";
+        bool commitBound = false;
+        if (status.Memory.CommitTotalBytes > 0)
+        {
+            long commitHeadroom = Math.Max(0, (long)((status.CommitLeftMb - SystemStatus.CommitReserveMb) / status.CommitPerClientMb));
+            commitBound = commitHeadroom < headroom;
+            headroom = Math.Min(headroom, commitHeadroom);
+        }
+
+        CapacityText = $"Room for about {headroom} more client{(headroom == 1 ? "" : "s")}{(commitBound ? ", limited by the page file size" : "")}";
     }
 
     private void UpdateSchedule()
@@ -130,6 +159,9 @@ public sealed partial class DashboardViewModel : ObservableObject
 
     [RelayCommand]
     private void TileWindows() => _host.Instances.TileWindows();
+
+    [RelayCommand]
+    private void CompactTile() => _host.Instances.TileWindowsCompact();
 
     [RelayCommand]
     private void MinimizeAll() => _host.Instances.MinimizeAll();

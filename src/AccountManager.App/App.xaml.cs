@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Windows;
@@ -5,6 +6,7 @@ using System.Windows.Threading;
 using AccountManager.App.Services;
 using AccountManager.App.ViewModels;
 using AccountManager.App.Views;
+using AccountManager.Core.Processes;
 using AccountManager.Core.Security;
 using AccountManager.Core.Services;
 using AccountManager.Core.Storage;
@@ -46,6 +48,24 @@ public partial class App : Application
         _paths.EnsureCreated();
         var settings = new SettingsStore(_paths.Settings);
 
+        // Running several Roblox clients needs administrator rights (see MultiInstanceGuard). Ask once at startup.
+        bool elevationDeclined = false;
+        if (settings.Current.RunAsAdministrator && !SystemMemory.IsElevated() && !e.Args.Contains(ElevatedRestartArg))
+        {
+            try
+            {
+                string args = string.Join(' ', e.Args.Append(ElevatedRestartArg));
+                Process.Start(new ProcessStartInfo(Environment.ProcessPath!, args) { UseShellExecute = true, Verb = "runas" });
+                Shutdown();
+                return;
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // The user said no to the Windows prompt; carry on without.
+                elevationDeclined = true;
+            }
+        }
+
         // 3. Vault.
         var vault = new Vault(_paths.Vault);
         bool wasReset;
@@ -71,6 +91,12 @@ public partial class App : Application
         _host = new AppHost(_paths, settings, vault);
         AppHost.Current = _host;
         _host.Log.Info("Account manager started.");
+        _host.Instances.CommitRunningLow += leftGb =>
+            Ui.Error("Windows is almost out of memory", $"{leftGb:0.0} GB left. Close a few clients now, or the desktop may freeze.");
+        if (elevationDeclined)
+        {
+            _host.Log.Warning("Running without administrator rights: only one Roblox client can run at a time.");
+        }
         if (wasReset)
         {
             _host.Log.Warning("Saved sign-ins were erased. Sign in to each account again before launching it.");

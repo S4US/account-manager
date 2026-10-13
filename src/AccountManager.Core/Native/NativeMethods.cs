@@ -184,11 +184,24 @@ internal static partial class NativeMethods
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsZoomed(nint hwnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool ShowWindow(nint hwnd, int command);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SetWindowPos(nint hwnd, nint insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    // Window styles live in the low 32 bits, so the non-Ptr variants are enough on both bitnesses.
+    public const int GWL_STYLE = -16;
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial int GetWindowLongW(nint hwnd, int index);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial int SetWindowLongW(nint hwnd, int index, int value);
 
     [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
     [return: MarshalAs(UnmanagedType.Bool)]

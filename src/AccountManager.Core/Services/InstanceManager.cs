@@ -66,7 +66,37 @@ public sealed class InstanceInfo
     internal bool StableRecorded { get; set; }
 }
 
-public sealed record SystemStatus(double CpuPercent, MemorySnapshot Memory, int RunningClients, double ClientsMemoryMb, double ClientsCpuPercent);
+/// <param name="CommitPerClientMb">Commit one more client is expected to need once it's in a game.</param>
+/// <param name="PendingCommitMb">Commit the clients still loading will take on top of what they hold now.</param>
+public sealed record SystemStatus(double CpuPercent, MemorySnapshot Memory, int RunningClients, double ClientsMemoryMb, double ClientsCpuPercent,
+    double CommitPerClientMb = SystemStatus.DefaultClientCommitMb, double PendingCommitMb = 0)
+{
+    /// <summary>Commit space to keep free for Windows itself (the desktop compositor freezes without it).</summary>
+    public const long CommitReserveMb = 2048;
+
+    // A client in a game commits about 1.6-1.7 GB, far more than its working set, and a memory cap doesn't lower it.
+    public const double DefaultClientCommitMb = 1800;
+
+    /// <summary>Clients younger than this are still loading their game and keep committing memory.</summary>
+    public static readonly TimeSpan CommitSettleTime = TimeSpan.FromMinutes(3);
+
+    public DateTime SampledAt { get; init; }
+
+    /// <summary>Commit left under the limit once the clients still loading have taken theirs.</summary>
+    public double CommitLeftMb => Memory.CommitAvailableMb - PendingCommitMb;
+
+    /// <summary>
+    /// Estimates one client's commit from the clients that have finished loading, or a typical value while none
+    /// have, and how much more the clients still loading will take to reach it.
+    /// </summary>
+    public static (double PerClientMb, double PendingMb) EstimateClientCommit(IReadOnlyCollection<(double CommitMb, bool Settled)> clients)
+    {
+        List<double> settled = clients.Where(c => c.Settled).Select(c => c.CommitMb).ToList();
+        double perClient = settled.Count > 0 ? Math.Max(1024, settled.Average()) : DefaultClientCommitMb;
+        double pending = clients.Where(c => !c.Settled).Sum(c => Math.Max(0, perClient - c.CommitMb));
+        return (perClient, pending);
+    }
+}
 
 /// <summary>
 /// Coordinates every client: a launch queue with staggering and memory throttling, per-process tuning after
@@ -89,6 +119,8 @@ public sealed class InstanceManager : IDisposable
     private readonly Timer _metricsTimer;
     private readonly Timer _maintenanceTimer;
     private DateTime _lastLaunchStarted = DateTime.MinValue;
+    private DateTime _lastAttached = DateTime.MinValue;
+    private bool _commitLowWarned;
     private DateTime _lastTrim = DateTime.UtcNow;
     private DateTime _lastMute = DateTime.MinValue;
     private int _maintenanceRunning;
@@ -111,6 +143,12 @@ public sealed class InstanceManager : IDisposable
 
     /// <summary>Raised (on a background thread) after each metrics sample.</summary>
     public event Action<SystemStatus>? StatusSampled;
+
+    /// <summary>
+    /// Raised (on a background thread) when clients that are already running have used up the commit reserve, with
+    /// the GB left. Once per episode.
+    /// </summary>
+    public event Action<double>? CommitRunningLow;
 
     public SystemStatus Status => _status;
 
@@ -236,6 +274,8 @@ public sealed class InstanceManager : IDisposable
 
     public void TileWindows() => WindowTools.Tile(GetWindows());
 
+    public void TileWindowsCompact() => WindowTools.TileCompact(GetWindows());
+
     public void MinimizeAll()
     {
         foreach (nint window in GetWindows())
@@ -345,6 +385,48 @@ public sealed class InstanceManager : IDisposable
             SetState(info, InstanceState.Queued, $"Waiting for free memory ({memory.AvailableMb:N0} MB free)");
             await Task.Delay(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
         }
+
+        // Never start a client the commit limit (RAM plus page file) can't hold. Once it's reached Windows can't
+        // allocate memory for anything and the desktop freezes, even with physical RAM free. The stagger doesn't
+        // wait for a client to finish loading, so the ones still loading count with what they'll take once in
+        // their game. Unlike the check above, this one doesn't give up.
+        await WaitForSampleAfterLastAttachAsync(info, ct).ConfigureAwait(false);
+        bool logged = false;
+        while (info.State == InstanceState.Queued)
+        {
+            MemorySnapshot memory = SystemMemory.GetSnapshot();
+            SystemStatus status = _status;
+            double left = memory.CommitAvailableMb - status.PendingCommitMb;
+            if (memory.CommitTotalBytes == 0 || left >= status.CommitPerClientMb + SystemStatus.CommitReserveMb)
+            {
+                break;
+            }
+
+            double leftGb = Math.Max(0, left) / 1024.0;
+            if (!logged)
+            {
+                string loading = status.PendingCommitMb >= 100 ? $" once the clients still loading take about {status.PendingCommitMb / 1024.0:0.0} GB more" : "";
+                _log.Warning($"Launches paused: Windows' memory limit (RAM plus page file) is almost reached, {leftGb:0.0} GB left{loading}. " +
+                    "Close some clients, or make the page file larger.");
+                logged = true;
+            }
+
+            SetState(info, InstanceState.Queued, $"Waiting: Windows memory limit almost reached ({leftGb:0.0} GB left)");
+            await Task.Delay(TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Waits (briefly) for a metrics sample that includes the client attached last. When its launch took longer
+    /// than the stagger, the queue gets here right after it, before any sample counts it as loading.
+    /// </summary>
+    private async Task WaitForSampleAfterLastAttachAsync(InstanceInfo info, CancellationToken ct)
+    {
+        DateTime giveUp = DateTime.UtcNow.AddSeconds(5);
+        while (_status.SampledAt < _lastAttached && info.State == InstanceState.Queued && DateTime.UtcNow < giveUp)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(250), ct).ConfigureAwait(false);
+        }
     }
 
     private async Task LaunchOneAsync(Account account, InstanceInfo info, JoinTarget? targetOverride, CancellationToken ct)
@@ -414,6 +496,7 @@ public sealed class InstanceManager : IDisposable
         info.CookieRejected = false;
         info.LastAntiAfk = DateTime.UtcNow;
         SetState(info, InstanceState.Running, "");
+        _lastAttached = DateTime.UtcNow;
 
         ApplyTuning(account, process);
 
@@ -432,9 +515,35 @@ public sealed class InstanceManager : IDisposable
         info.Watcher = watcher;
         watcher.Start();
 
+        if (!adopted && account.Optimize && Settings.ShrinkWindowsOnLaunch)
+        {
+            _ = ShrinkWhileStartingAsync(info, process.Id);
+        }
+
         if (!adopted && Settings.MinimizeAfterLaunch)
         {
             _ = MinimizeLaterAsync(info, process.Id);
+        }
+    }
+
+    // Times after launch to shrink the window again. Roblox can maximize its window just after it appears (it starts
+    // maximized when it was last closed that way), so one pass right away isn't always enough.
+    private static readonly TimeSpan[] ShrinkPasses = [TimeSpan.Zero, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(20)];
+
+    private async Task ShrinkWhileStartingAsync(InstanceInfo info, int pid)
+    {
+        TimeSpan elapsed = TimeSpan.Zero;
+        foreach (TimeSpan at in ShrinkPasses)
+        {
+            await Task.Delay(at - elapsed).ConfigureAwait(false);
+            elapsed = at;
+            if (info.ProcessId != pid || info.State != InstanceState.Running)
+            {
+                return;
+            }
+
+            // A no-op once the window is at its minimum.
+            WindowTools.ShrinkToMinimum(info.Window != 0 ? info.Window : WindowTools.FindMainWindow(pid));
         }
     }
 
@@ -679,6 +788,7 @@ public sealed class InstanceManager : IDisposable
         {
             double systemCpu = _cpu.SampleSystem();
             double clientsMemory = 0;
+            var clientsCommit = new List<(double CommitMb, bool Settled)>();
             double clientsCpu = 0;
             int running = 0;
             AppSettings settings = Settings;
@@ -714,6 +824,8 @@ public sealed class InstanceManager : IDisposable
 
                     running++;
                     clientsMemory += info.MemoryMb;
+                    bool settled = info.StartedAt is { } launched && DateTime.Now - launched > SystemStatus.CommitSettleTime;
+                    clientsCommit.Add((process.PrivateMemorySize64 / 1048576.0, settled));
                     clientsCpu += info.CpuPercent;
 
                     if (!info.StableRecorded && info.StartedAt is { } started && DateTime.Now - started > StableThreshold)
@@ -741,13 +853,49 @@ public sealed class InstanceManager : IDisposable
             }
 
             _cpu.Forget(_instances.Values.Where(i => i.Process is not null).Select(i => i.ProcessId));
-            _status = new SystemStatus(systemCpu, SystemMemory.GetSnapshot(), running, clientsMemory, clientsCpu);
+            (double perClient, double pending) = SystemStatus.EstimateClientCommit(clientsCommit);
+            _status = new SystemStatus(systemCpu, SystemMemory.GetSnapshot(), running, clientsMemory, clientsCpu, perClient, pending)
+            {
+                SampledAt = DateTime.UtcNow,
+            };
+            WarnIfCommitLow(_status);
             StatusSampled?.Invoke(_status);
         }
         catch (Exception ex)
         {
             _log.Error("Metrics sampling failed: " + ex.Message);
         }
+    }
+
+    /// <summary>
+    /// The launch pause keeps the reserve free, but clients already running can still grow into it, and at the
+    /// limit the desktop freezes. Warns once, and again only after enough memory was freed in between.
+    /// </summary>
+    private void WarnIfCommitLow(SystemStatus status)
+    {
+        MemorySnapshot memory = status.Memory;
+        if (memory.CommitTotalBytes == 0 || status.RunningClients == 0)
+        {
+            return;
+        }
+
+        if (memory.CommitAvailableMb >= SystemStatus.CommitReserveMb * 2)
+        {
+            _commitLowWarned = false;
+            return;
+        }
+
+        if (memory.CommitAvailableMb >= SystemStatus.CommitReserveMb || _commitLowWarned)
+        {
+            return;
+        }
+
+        _commitLowWarned = true;
+        double leftGb = memory.CommitAvailableMb / 1024.0;
+        _log.Warning($"Windows is almost out of memory: {leftGb:0.0} GB left under its limit (RAM plus page file). " +
+            "Close a few clients now, or the desktop can freeze.");
+        Notify("Windows is almost out of memory", $"{leftGb:0.0} GB left under the limit with {status.RunningClients} clients running.", 0xE01B24);
+        CommitRunningLow?.Invoke(leftGb);
     }
 
     private async Task RunMaintenanceAsync()

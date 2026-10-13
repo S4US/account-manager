@@ -59,6 +59,7 @@ public sealed partial class PerformanceViewModel : ObservableObject
     public int LogicalProcessors { get; } = Environment.ProcessorCount;
 
     [ObservableProperty] private bool _multiInstance;
+    [ObservableProperty] private bool _runAsAdministrator;
     [ObservableProperty] private double _launchStaggerSeconds;
     [ObservableProperty] private double _lowMemoryThrottleMb;
     [ObservableProperty] private Choice<int>? _defaultFpsCap;
@@ -67,6 +68,7 @@ public sealed partial class PerformanceViewModel : ObservableObject
     [ObservableProperty] private bool _lowPriority;
     [ObservableProperty] private bool _efficiencyMode;
     [ObservableProperty] private bool _spreadCpuAffinity;
+    [ObservableProperty] private bool _shrinkWindowsOnLaunch;
     [ObservableProperty] private Choice<int>? _globalRamLimit;
     [ObservableProperty] private Choice<double>? _cpuLimit;
     [ObservableProperty] private bool _autoMute;
@@ -87,6 +89,7 @@ public sealed partial class PerformanceViewModel : ObservableObject
         _loading = true;
         AppSettings s = _host.Settings.Current;
         MultiInstance = s.MultiInstance;
+        RunAsAdministrator = s.RunAsAdministrator;
         LaunchStaggerSeconds = s.LaunchStaggerSeconds;
         LowMemoryThrottleMb = s.LowMemoryThrottleMb;
         DefaultFpsCap = FpsCaps.FirstOrDefault(c => c.Value == s.DefaultFpsCap) ?? new Choice<int>($"{s.DefaultFpsCap} FPS", s.DefaultFpsCap);
@@ -95,7 +98,8 @@ public sealed partial class PerformanceViewModel : ObservableObject
         LowPriority = s.LowPriority;
         EfficiencyMode = s.EfficiencyMode;
         SpreadCpuAffinity = s.SpreadCpuAffinity;
-        GlobalRamLimit = RamLimits.FirstOrDefault(c => c.Value == s.GlobalRamLimitMb) ?? RamLimits[0];
+        ShrinkWindowsOnLaunch = s.ShrinkWindowsOnLaunch;
+        GlobalRamLimit =RamLimits.FirstOrDefault(c => c.Value == s.GlobalRamLimitMb) ?? RamLimits[0];
         CpuLimit = CpuLimits.FirstOrDefault(c => c.Value == s.CpuLimitCores) ?? CpuLimits[0];
         AutoMute = s.AutoMute;
         PeriodicTrim = s.PeriodicTrim;
@@ -126,6 +130,8 @@ public sealed partial class PerformanceViewModel : ObservableObject
 
     partial void OnMultiInstanceChanged(bool value) => Save(s => s.MultiInstance = value);
 
+    partial void OnRunAsAdministratorChanged(bool value) => Save(s => s.RunAsAdministrator = value);
+
     partial void OnLaunchStaggerSecondsChanged(double value) => Save(s => s.LaunchStaggerSeconds = Math.Clamp((int)Math.Round(value), 0, 300));
 
     partial void OnLowMemoryThrottleMbChanged(double value) => Save(s => s.LowMemoryThrottleMb = Math.Clamp((int)Math.Round(value), 0, 65536));
@@ -141,6 +147,8 @@ public sealed partial class PerformanceViewModel : ObservableObject
     partial void OnEfficiencyModeChanged(bool value) => Save(s => s.EfficiencyMode = value, retune: true);
 
     partial void OnSpreadCpuAffinityChanged(bool value) => Save(s => s.SpreadCpuAffinity = value, retune: true);
+
+    partial void OnShrinkWindowsOnLaunchChanged(bool value) => Save(s => s.ShrinkWindowsOnLaunch = value);
 
     partial void OnGlobalRamLimitChanged(Choice<int>? value) => Save(s => s.GlobalRamLimitMb = value?.Value ?? 0, retune: true);
 
@@ -199,8 +207,20 @@ public sealed partial class PerformanceViewModel : ObservableObject
     [RelayCommand]
     private void ReleaseSingletonNow()
     {
-        int released = MultiInstanceGuard.CloseSingletonHandlesInRunningClients(TimeSpan.FromSeconds(30), m => _host.Log.Info(m));
-        Ui.Notify(released == 0 ? "No locks to release" : $"Released {released} lock{(released == 1 ? "" : "s")}");
+        ReleaseResult release = MultiInstanceGuard.CloseSingletonHandlesInRunningClients(TimeSpan.FromSeconds(30), m => _host.Log.Info(m));
+        if (release.Unreachable > 0)
+        {
+            Ui.Notify("Needs administrator rights", "Restart the app as administrator to release Roblox's lock.", Wpf.Ui.Controls.ControlAppearance.Caution);
+            return;
+        }
+
+        if (release.HeldElsewhere)
+        {
+            Ui.Notify("Lock held by another program", "Close Roblox Account Manager (or turn off its Multi Roblox) so clients can run side by side.", Wpf.Ui.Controls.ControlAppearance.Caution);
+            return;
+        }
+
+        Ui.Notify(release.Closed == 0 ? "No locks to release" : $"Released {release.Closed} lock{(release.Closed == 1 ? "" : "s")}");
     }
 
     [RelayCommand]

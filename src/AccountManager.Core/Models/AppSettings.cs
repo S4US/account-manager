@@ -6,6 +6,12 @@ public sealed class AppSettings
     // Launching
     public bool MultiInstance { get; set; } = true;
 
+    /// <summary>
+    /// Restart elevated on startup. Without administrator rights the app can't release Roblox's single-instance lock
+    /// in a running client, so only one client can run.
+    /// </summary>
+    public bool RunAsAdministrator { get; set; } = true;
+
     /// <summary>Seconds to wait between clients when launching several accounts.</summary>
     public int LaunchStaggerSeconds { get; set; } = 12;
 
@@ -28,6 +34,12 @@ public sealed class AppSettings
     public bool EfficiencyMode { get; set; } = true;
 
     public bool SpreadCpuAffinity { get; set; }
+
+    /// <summary>
+    /// Shrink each new client's window to the smallest size Windows allows for a normal (framed) window, so it
+    /// draws as few pixels as possible. Compact tile can go smaller by removing the frame.
+    /// </summary>
+    public bool ShrinkWindowsOnLaunch { get; set; }
 
     /// <summary>Working set cap for every client in MB. 0 = disabled. Per-account limits take precedence.</summary>
     public int GlobalRamLimitMb { get; set; }

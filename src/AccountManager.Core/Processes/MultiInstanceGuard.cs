@@ -15,6 +15,14 @@ namespace AccountManager.Core.Processes;
 /// (Holding them in this process instead made every new client wait, and closing a handle a client is waiting on
 /// makes it shut itself down.)
 /// </summary>
+/// <param name="Closed">Singleton handles closed.</param>
+/// <param name="Unreachable">Clients that couldn't be opened or read; when above zero nothing was closed.</param>
+/// <param name="HeldElsewhere">
+/// The singleton objects still exist although no Roblox client holds them: another program (such as Roblox Account
+/// Manager with Multi Roblox on) keeps them open. New clients then wait on that lock, and the next release kills them.
+/// </param>
+public sealed record ReleaseResult(int Closed, int Unreachable, bool HeldElsewhere = false);
+
 public static class MultiInstanceGuard
 {
     private const string SingletonPrefix = "ROBLOX_singleton";
@@ -23,15 +31,22 @@ public static class MultiInstanceGuard
     /// Closes the singleton handles held by running Roblox clients and returns how many were closed. Only clients
     /// older than <paramref name="minimumAge"/> are touched, so none is caught in its own startup wait, and only
     /// their mutex and event handles are opened.
+    ///
+    /// All or nothing: a started client can't be reached without administrator rights, and if the one holding the
+    /// lock can't be released, closing handles in the others only kills a client that is still waiting for the
+    /// lock. So when any client is unreachable nothing is closed and <see cref="ReleaseResult.Unreachable"/> says
+    /// how many clients blocked it.
     /// </summary>
-    public static int CloseSingletonHandlesInRunningClients(TimeSpan minimumAge, Action<string>? log = null)
+    public static ReleaseResult CloseSingletonHandlesInRunningClients(TimeSpan minimumAge, Action<string>? log = null)
     {
         Process[] clients = Process.GetProcessesByName(RobloxInstallation.PlayerProcessName);
         if (clients.Length == 0)
         {
-            return 0;
+            return new ReleaseResult(0, 0, SingletonExists());
         }
 
+        // A young client may still hold the objects legitimately, so they only prove an outside holder without one.
+        bool skippedYoung = false;
         var pids = new HashSet<int>();
         foreach (Process p in clients)
         {
@@ -41,9 +56,14 @@ public static class MultiInstanceGuard
                 {
                     pids.Add(p.Id);
                 }
+                else
+                {
+                    skippedYoung = true;
+                }
             }
             catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
             {
+                skippedYoung = true;
             }
             finally
             {
@@ -53,26 +73,62 @@ public static class MultiInstanceGuard
 
         if (pids.Count == 0)
         {
-            return 0;
+            return new ReleaseResult(0, 0);
         }
-        int closed = 0;
-        foreach ((int pid, List<nint> handles) in HandleEnumerator.GetMutexAndEventHandles(pids))
+
+        // First find the singleton handles in every eligible client, without closing anything.
+        Dictionary<int, List<nint>> byProcess = HandleEnumerator.GetMutexAndEventHandles(pids);
+        var plan = new List<(nint Process, int Pid, List<nint> Singletons)>();
+        int unreachable = 0;
+        foreach (int pid in pids)
         {
             nint process = NativeMethods.OpenProcess(NativeMethods.PROCESS_DUP_HANDLE, false, pid);
             if (process == 0)
             {
+                unreachable++;
                 continue;
             }
 
-            try
+            List<nint> handles = byProcess.TryGetValue(pid, out List<nint>? found) ? found : [];
+            var singletons = new List<nint>();
+            int inspected = 0;
+            foreach (nint remote in handles)
             {
-                foreach (nint remote in handles)
+                bool? singleton = IsSingletonHandle(process, remote);
+                if (singleton is not null)
                 {
-                    if (!IsSingletonHandle(process, remote))
-                    {
-                        continue;
-                    }
+                    inspected++;
+                }
 
+                if (singleton == true)
+                {
+                    singletons.Add(remote);
+                }
+            }
+
+            if (handles.Count > 0 && inspected == 0)
+            {
+                // Opened, but none of its handles could be read: as unreachable as a refused open.
+                unreachable++;
+                NativeMethods.CloseHandle(process);
+                continue;
+            }
+
+            plan.Add((process, pid, singletons));
+        }
+
+        int closed = 0;
+        try
+        {
+            if (unreachable > 0)
+            {
+                return new ReleaseResult(0, unreachable);
+            }
+
+            foreach ((nint process, int pid, List<nint> singletons) in plan)
+            {
+                foreach (nint remote in singletons)
+                {
                     if (NativeMethods.DuplicateHandle(process, remote, NativeMethods.GetCurrentProcess(), out nint local, 0, false, NativeMethods.DUPLICATE_CLOSE_SOURCE))
                     {
                         NativeMethods.CloseHandle(local);
@@ -81,20 +137,50 @@ public static class MultiInstanceGuard
                     }
                 }
             }
-            finally
+
+            return new ReleaseResult(closed, 0, !skippedYoung && SingletonExists());
+        }
+        finally
+        {
+            foreach ((nint process, _, _) in plan)
             {
                 NativeMethods.CloseHandle(process);
             }
         }
-
-        return closed;
     }
 
-    private static bool IsSingletonHandle(nint process, nint remote)
+    /// <summary>Whether Roblox's singleton mutex or event exists in this session.</summary>
+    private static bool SingletonExists()
+    {
+        try
+        {
+            if (Mutex.TryOpenExisting(SingletonPrefix + "Mutex", out Mutex? mutex))
+            {
+                mutex.Dispose();
+                return true;
+            }
+
+            if (EventWaitHandle.TryOpenExisting(SingletonPrefix + "Event", out EventWaitHandle? signal))
+            {
+                signal.Dispose();
+                return true;
+            }
+
+            return false;
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or WaitHandleCannotBeOpenedException)
+        {
+            // It exists, but belongs to someone we can't open or is a different kind of object.
+            return true;
+        }
+    }
+
+    /// <summary>True for a Roblox singleton object, false for anything else, null when the handle can't be read.</summary>
+    private static bool? IsSingletonHandle(nint process, nint remote)
     {
         if (!NativeMethods.DuplicateHandle(process, remote, NativeMethods.GetCurrentProcess(), out nint local, 0, false, NativeMethods.DUPLICATE_SAME_ACCESS))
         {
-            return false;
+            return null;
         }
 
         try

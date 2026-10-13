@@ -67,6 +67,24 @@
                         <TextBlock Style="{StaticResource StatValue}" Text="{Binding MemoryText}" />
                         <ProgressBar Style="{StaticResource Meter}" Value="{Binding MemoryPercent, Converter={StaticResource Percent}}" />
                         <TextBlock Style="{StaticResource CaptionText}" Text="{Binding MemoryDetail}" />
+                        <!--  Windows' commit limit: what runs out first with many clients, even with RAM free  -->
+                        <StackPanel ToolTip="Windows' memory limit: RAM plus page file. Every client's memory counts toward it, even the part a memory limit or trim moves out of RAM. When it's full, programs crash and the desktop can freeze. A larger page file raises it.">
+                            <ProgressBar Value="{Binding CommitPercent, Converter={StaticResource Percent}}">
+                                <ProgressBar.Style>
+                                    <Style BasedOn="{StaticResource Meter}" TargetType="ProgressBar">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CommitTone}" Value="{x:Static vm:StatusTone.Caution}">
+                                                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding CommitTone}" Value="{x:Static vm:StatusTone.Critical}">
+                                                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ProgressBar.Style>
+                            </ProgressBar>
+                            <TextBlock Style="{StaticResource CaptionText}" Text="{Binding CommitText}" />
+                        </StackPanel>
                     </StackPanel>
                 </ui:Card>
                 <ui:Card Margin="8,0,0,0" Style="{StaticResource StatCard}">
@@ -89,9 +107,22 @@
                     <!--  Quick actions  -->
                     <TextBlock Style="{StaticResource SectionTitle}" Text="Quick actions" />
                     <UniformGrid Margin="0,0,-8,0" Columns="2">
-                        <ui:Button Command="{Binding TileWindowsCommand}" Content="Tile windows" Style="{StaticResource ActionButton}">
+                        <ui:Button
+                            Command="{Binding TileWindowsCommand}"
+                            Content="Tile windows"
+                            Style="{StaticResource ActionButton}"
+                            ToolTip="Arrange every client in a grid with normal window frames">
                             <ui:Button.Icon>
                                 <ui:SymbolIcon Symbol="Grid24" />
+                            </ui:Button.Icon>
+                        </ui:Button>
+                        <ui:Button
+                            Command="{Binding CompactTileCommand}"
+                            Content="Compact tile"
+                            Style="{StaticResource ActionButton}"
+                            ToolTip="Remove window frames so clients can be smaller than Windows normally allows. Tile windows puts the frames back">
+                            <ui:Button.Icon>
+                                <ui:SymbolIcon Symbol="GridDots24" />
                             </ui:Button.Icon>
                         </ui:Button>
                         <ui:Button Command="{Binding MinimizeAllCommand}" Content="Minimize all" Style="{StaticResource ActionButton}">
@@ -224,7 +255,7 @@
                 Margin="0,24,0,0"
                 IsClosable="False"
                 IsOpen="True"
-                Message="Everything works without them except standby memory purging. You can restart as administrator from the Performance page."
+                Message="Only one Roblox client can run at a time, and standby memory purging is off. Restart the app as administrator, or turn on &quot;Run as administrator&quot; in Performance."
                 Severity="Informational"
                 Title="Running without administrator rights"
                 Visibility="{Binding IsElevated, Converter={StaticResource InverseBoolToVisibility}}" />

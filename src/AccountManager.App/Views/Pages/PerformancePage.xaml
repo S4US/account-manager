@@ -43,6 +43,15 @@
             <ui:CardControl Style="{StaticResource SettingCard}">
                 <ui:CardControl.Header>
                     <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Run as administrator" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Needed to run more than one client: without it the app can't release Roblox's lock in a client that's already running. Windows asks for permission when the app starts." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding RunAsAdministrator}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
                         <TextBlock Style="{StaticResource SettingHeader}" Text="Release locks now" />
                         <TextBlock Style="{StaticResource SettingDescription}" Text="Only needed to open another Roblox yourself, outside this app. Launches from here already do this." />
                     </StackPanel>
@@ -149,6 +158,15 @@
                     </StackPanel>
                 </ui:CardControl.Header>
                 <ui:ToggleSwitch IsChecked="{Binding SpreadCpuAffinity}" />
+            </ui:CardControl>
+            <ui:CardControl Style="{StaticResource SettingCard}">
+                <ui:CardControl.Header>
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingHeader}" Text="Smallest window" />
+                        <TextBlock Style="{StaticResource SettingDescription}" Text="Shrinks each new client's window to the smallest size Windows allows, so it draws far fewer pixels. It keeps its title bar, so you can still move, resize and close it. Compact tile on the Overview can go smaller still." />
+                    </StackPanel>
+                </ui:CardControl.Header>
+                <ui:ToggleSwitch IsChecked="{Binding ShrinkWindowsOnLaunch}" />
             </ui:CardControl>
             <ui:CardControl Style="{StaticResource SettingCard}">
                 <ui:CardControl.Header>

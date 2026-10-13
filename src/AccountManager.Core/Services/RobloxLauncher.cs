@@ -93,10 +93,26 @@ public sealed class RobloxLauncher
         if (settings.MultiInstance)
         {
             // Clients a few seconds old are past their startup wait on the singleton mutex.
-            int released = MultiInstanceGuard.CloseSingletonHandlesInRunningClients(TimeSpan.FromSeconds(5));
-            if (released > 0)
+            ReleaseResult release = MultiInstanceGuard.CloseSingletonHandlesInRunningClients(TimeSpan.FromSeconds(5));
+            if (release.Unreachable > 0)
             {
-                _log.Info($"Released {released} Roblox single-instance lock{(released == 1 ? "" : "s")} so another client can start.", account.DisplayLabel);
+                // Starting anyway would leave the new client waiting for a lock nobody can release.
+                throw new LaunchException(
+                    "Roblox is already running and this app can't open another client without administrator rights. " +
+                    "Turn on \"Run as administrator\" in Performance, or restart the app as administrator.");
+            }
+
+            if (release.HeldElsewhere)
+            {
+                // The new client would wait on that lock, and the next launch would close it.
+                throw new LaunchException(
+                    "Another program is holding Roblox's single-instance lock, so each new client would close the one before it. " +
+                    "This is usually Roblox Account Manager with Multi Roblox on: close it, then launch again.");
+            }
+
+            if (release.Closed > 0)
+            {
+                _log.Info($"Released {release.Closed} Roblox single-instance lock{(release.Closed == 1 ? "" : "s")} so another client can start.", account.DisplayLabel);
             }
         }
 
